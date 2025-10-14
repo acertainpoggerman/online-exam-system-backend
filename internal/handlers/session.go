@@ -81,3 +81,15 @@ func (h *Handler) HandleUpdateSessionByID(w http.ResponseWriter, r *http.Request
 	res := api.Envelope{"session": session}
 	api.WriteJSON(w, http.StatusCreated, res, nil)
 }
+
+func (h *Handler) HandleConnectToSession(w http.ResponseWriter, r *http.Request) {
+
+}
+
+func (h *Handler) HandleStartSessionByID(w http.ResponseWriter, r *http.Request) {
+
+}
+
+func (h *Handler) HandleEndSessionByID(w http.ResponseWriter, r *http.Request) {
+
+}

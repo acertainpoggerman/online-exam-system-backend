@@ -66,6 +66,10 @@ func main() {
 	authRouter.HandleFunc("POST /sessions", httpHandler.HandleCreateSession)
 	authRouter.HandleFunc("DELETE /sessions/{id}", httpHandler.HandleDeleteSessionByID)
 	authRouter.HandleFunc("PUT /sessions/{id}", httpHandler.HandleUpdateSessionByID)
+	// [Sessions|Connection/Handling]
+	authRouter.HandleFunc("GET /sessions/{id}/connect", httpHandler.HandleConnectToSession)
+	authRouter.HandleFunc("POST /sessions/{id}/start", httpHandler.HandleStartSessionByID)
+	authRouter.HandleFunc("POST /sessions/{id}/end", httpHandler.HandleEndSessionByID)
 	// ---
 
 	// [Server]
