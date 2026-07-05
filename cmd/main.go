@@ -82,7 +82,7 @@ func main() {
 	// --- Defining and Running Server ------------------------------------------
 	// --------------------------------------------------------------------------
 
-	addr := "localhost:3000"
+	addr := ":3000"
 	log.Printf("Starting server at %s", addr)
 
 	server := http.Server{

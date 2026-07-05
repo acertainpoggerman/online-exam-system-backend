@@ -53,8 +53,8 @@ func (h *UserHandler) registerUser(w http.ResponseWriter, r *http.Request) {
 		Name:     "token",
 		Value:    token,
 		HttpOnly: true,
-		Secure:   true,
-		SameSite: http.SameSiteStrictMode,
+		Secure:   false,
+		SameSite: http.SameSiteLaxMode,
 		MaxAge:   h.jwtAge,
 		Path:     "/",
 	})
@@ -80,8 +80,8 @@ func (h *UserHandler) loginUser(w http.ResponseWriter, r *http.Request) {
 		Name:     "token",
 		Value:    token,
 		HttpOnly: true,
-		Secure:   true,
-		SameSite: http.SameSiteStrictMode,
+		Secure:   false,
+		SameSite: http.SameSiteLaxMode,
 		MaxAge:   h.jwtAge,
 		Path:     "/",
 	})
@@ -96,8 +96,8 @@ func (h *UserHandler) logoutUser(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     "token",
 		HttpOnly: true,
-		Secure:   true,
-		SameSite: http.SameSiteStrictMode,
+		Secure:   false,
+		SameSite: http.SameSiteLaxMode,
 		MaxAge:   -1,
 		Path:     "/",
 	})
