@@ -51,6 +51,16 @@ func (svc *scriptService) FindQuestionByID(ctx context.Context, questionID uuid.
 	defer tx.Rollback(ctx)
 	qtx := svc.q.WithTx(tx)
 
+	question, err := svc.findQuestionByID(ctx, qtx, questionID)
+	if err != nil {
+		return Question{}, err
+	}
+
+	return question, tx.Commit(ctx)
+}
+
+func (svc *scriptService) findQuestionByID(ctx context.Context, qtx *store.Queries, questionID uuid.UUID) (Question, error) {
+
 	question, err := qtx.FindQuestionByID(ctx, questionID)
 	if err != nil {
 		return Question{}, err
@@ -84,7 +94,7 @@ func (svc *scriptService) FindQuestionByID(ctx context.Context, questionID uuid.
 			final.AnswerKey = answerKey
 		}
 
-		return final, tx.Commit(ctx)
+		return final, nil
 
 	case store.QuestionTypeText:
 		subq, err := qtx.FindTextQuestionByID(ctx, question.ID)
@@ -105,7 +115,7 @@ func (svc *scriptService) FindQuestionByID(ctx context.Context, questionID uuid.
 			final.AnswerKey = answerKey
 		}
 
-		return final, tx.Commit(ctx)
+		return final, nil
 
 	default:
 		return Question{}, fmt.Errorf("Question Type: \"%s\" does not exist", question.Type)
@@ -443,7 +453,7 @@ func (svc *scriptService) CreateQuestion(ctx context.Context, user store.User, s
 		return Question{}, err
 	}
 
-	created, err := svc.FindQuestionByID(ctx, questionID)
+	created, err := svc.findQuestionByID(ctx, qtx, questionID)
 	if err != nil {
 		return Question{}, err
 	}
@@ -501,7 +511,7 @@ func (svc *scriptService) ReplaceQuestion(ctx context.Context, user store.User, 
 		}
 
 		if err := qtx.ReplaceOptionsForQuestion(ctx, store.ReplaceOptionsForQuestionParams{
-			QuestionID: question.ID,
+			QuestionID: questionID,
 			Values:     values,
 			ImageUrls:  imgUrls,
 		}); err != nil {
@@ -546,7 +556,7 @@ func (svc *scriptService) ReplaceQuestion(ctx context.Context, user store.User, 
 	// ----------------------------------------------------------------------------------------
 	// --- Get Full Question ------------------------------------------------------------------
 
-	replaced, err := svc.FindQuestionByID(ctx, questionID)
+	replaced, err := svc.findQuestionByID(ctx, qtx, questionID)
 	if err != nil {
 		return Question{}, err
 	}
@@ -582,7 +592,7 @@ func (svc *scriptService) DeleteQuestion(ctx context.Context, user store.User, s
 	// ----------------------------------------------------------------------------------------
 	// --- Get Full Question & Delete it ------------------------------------------------------
 
-	deleted, err := svc.FindQuestionByID(ctx, questionID)
+	deleted, err := svc.findQuestionByID(ctx, qtx, questionID)
 	if err != nil {
 		return Question{}, err
 	}
@@ -595,5 +605,5 @@ func (svc *scriptService) DeleteQuestion(ctx context.Context, user store.User, s
 		return Question{}, err
 	}
 
-	return deleted, err
+	return deleted, tx.Commit(ctx)
 }

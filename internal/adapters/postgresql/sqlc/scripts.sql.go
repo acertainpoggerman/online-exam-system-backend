@@ -717,13 +717,19 @@ WITH deleted AS (
     UPDATE questions SET
         type = 'choice'
     WHERE questions.id = $1
+    RETURNING questions.id
 ) INSERT INTO choice_questions (
     id,
     is_multiple_choice
 ) SELECT $1, $2 FROM
-    questions INNER JOIN scripts ON questions.script_id = scripts.id
+    updated_type
+    INNER JOIN questions ON questions.id = updated_type.id
+    INNER JOIN scripts ON questions.script_id = scripts.id
+    CROSS JOIN deleted
 WHERE questions.id = $1
     AND scripts.locked = false
+ON CONFLICT (id) DO UPDATE SET
+    is_multiple_choice = EXCLUDED.is_multiple_choice
 `
 
 type UpsertChoiceQuestionParams struct {
@@ -752,13 +758,19 @@ WITH deleted AS (
     UPDATE questions SET
         type = 'text'
     WHERE questions.id = $1
+    RETURNING questions.id
 ) INSERT INTO text_questions (
     id,
     is_short_text
 ) SELECT $1, $2 FROM
-    questions INNER JOIN scripts ON questions.script_id = scripts.id
+    updated_type
+    INNER JOIN questions ON questions.id = updated_type.id
+    INNER JOIN scripts ON questions.script_id = scripts.id
+    CROSS JOIN deleted
 WHERE questions.id = $1
     AND scripts.locked = false
+ON CONFLICT (id) DO UPDATE SET
+    is_short_text = EXCLUDED.is_short_text
 `
 
 type UpsertTextQuestionParams struct {
