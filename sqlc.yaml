@@ -1,0 +1,60 @@
+version: "2"
+sql:
+  - engine: "postgresql"
+    queries: "./internal/adapters/postgresql/sqlc/sql/queries/"
+    schema: "./internal/adapters/postgresql/sqlc/sql/schema.sql"
+    gen:
+      go:
+        package: "store"
+        out: "./internal/adapters/postgresql/sqlc/"
+        sql_package: "pgx/v5"
+        emit_json_tags: true
+        emit_interface: true
+        emit_empty_slices: true
+        emit_pointers_for_null_types: true
+        overrides:
+          - column: "choice_questions.id"
+            go_struct_tag: 'json:"-"'
+          - column: "text_questions.id"
+            go_struct_tag: 'json:"-"'
+
+          - column: "questions.script_id"
+            go_struct_tag: 'json:"-"'
+          - column: "questions.created_at"
+            go_struct_tag: 'json:"-"'
+          - column: "submission_answers.question_id"
+            go_struct_tag: 'json:"-"'
+          - column: "options.question_id"
+            go_struct_tag: 'json:"-"'
+          - column: "answer_keys.question_id"
+            go_struct_tag: 'json:"-"'
+
+          - column: "*.image_url"
+            go_struct_tag: 'mapstructure:"image_url"'
+          - column: "*.deleted_at"
+            go_struct_tag: 'json:"-"'
+
+          - column: "text_questions.type"
+            go_struct_tag: 'json:"-"'
+          - column: "choice_questions.type"
+            go_struct_tag: 'json:"-"'
+
+          - column: "text_questions.is_short_text"
+            go_struct_tag: 'mapstructure:"is_short_text"'
+          - column: "choice_questions.is_multiple_choice"
+            go_struct_tag: 'mapstructure:"is_multiple_choice"'
+
+          - db_type: "uuid"
+            nullable: false
+            go_type:
+              import: "github.com/google/uuid"
+              type: "UUID"
+
+          - db_type: "timestamptz"
+            go_type: "time.Time"
+          - db_type: "timestamptz"
+            nullable: true
+            go_type:
+              import: "time"
+              pointer: true
+              type: "Time"

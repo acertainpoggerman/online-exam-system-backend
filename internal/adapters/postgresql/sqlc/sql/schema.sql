@@ -1,0 +1,261 @@
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
+--------------------------------------------------------------------------------
+--- USERS ----------------------------------------------------------------------
+--------------------------------------------------------------------------------
+
+CREATE TYPE user_role AS ENUM (
+    'examiner',
+    'examinee',
+    'admin'
+);
+
+CREATE TABLE users (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    email           VARCHAR(100) UNIQUE NOT NULL CHECK (email <> ''),
+    first_name      VARCHAR(50) NOT NULL CHECK (first_name <> ''),
+    last_name       VARCHAR(50) NOT NULL CHECK (last_name <> ''),
+    password_hash   TEXT NOT NULL CHECK (password_hash <> ''),
+    role            user_role NOT NULL
+);
+
+CREATE TABLE examiners (
+    id  UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE examinees (
+    id  UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE
+);
+
+--------------------------------------------------------------------------------
+
+
+
+--------------------------------------------------------------------------------
+--- SCRIPTS --------------------------------------------------------------------
+--------------------------------------------------------------------------------
+
+CREATE TABLE scripts (
+    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    title               VARCHAR(200) NOT NULL CHECK (title <> ''),
+    heading             VARCHAR(200) NOT NULL CHECK (heading <> ''),
+    description         VARCHAR(800) NOT NULL,
+    locked              BOOLEAN DEFAULT FALSE,
+
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    last_modified_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+    creator_id UUID NOT NULL REFERENCES examiners(id)
+);
+
+-- Indexes for quick searching scripts
+
+CREATE INDEX idx_scripts_creator_id ON scripts(creator_id);
+CREATE INDEX idx_scripts_title_trgm ON scripts USING gin(title gin_trgm_ops);
+CREATE INDEX idx_scripts_created_at ON scripts(created_at DESC, id DESC);
+CREATE INDEX idx_scripts_last_modified_at ON scripts(last_modified_at DESC, id DESC);
+
+-- For updating its last_modified_at
+-- when fields change (e.g. title, heading, description)
+
+CREATE TRIGGER trg_scripts_update_set_last_modified_at
+BEFORE UPDATE ON scripts
+FOR EACH ROW
+EXECUTE FUNCTION set_last_modified_at();
+
+--- QUESTIONS ------------------------------------------------------------------
+
+CREATE TYPE question_type AS ENUM (
+    'choice',
+    'text'
+);
+
+CREATE TABLE questions (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    text        TEXT NOT NULL,
+    image_url   TEXT,
+    type        question_type NOT NULL,
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+    script_id UUID NOT NULL REFERENCES scripts(id) ON DELETE CASCADE,
+    UNIQUE (id, type)
+);
+
+CREATE INDEX idx_questions_created_at ON questions(created_at ASC);
+
+-- Answer keys just represent a list of values
+-- for a question that could be the answer.
+
+CREATE TABLE answer_keys (
+    value       TEXT NOT NULL CHECK (value <> ''),
+    question_id UUID REFERENCES questions(id) ON DELETE CASCADE,
+    PRIMARY KEY (question_id, value)
+);
+
+-------------------------
+--- Choice Questions ----
+-------------------------
+
+-- To ensure mutual exclusivity of subtypes, we create
+-- a "constant" unique type to the subquestion that doesn't need
+-- to be filled, and combine that with the primary key to
+-- reference the parent table (id & type)
+
+CREATE TABLE choice_questions (
+    id                  UUID PRIMARY KEY,
+    is_multiple_choice  BOOLEAN NOT NULL DEFAULT TRUE,
+
+    type question_type NOT NULL DEFAULT 'choice' CHECK (type = 'choice'),
+    FOREIGN KEY (id, type) REFERENCES questions(id, type)
+);
+
+CREATE TABLE options (
+    value       TEXT NOT NULL CHECK (value <> ''),
+    question_id UUID NOT NULL REFERENCES choice_questions(id) ON DELETE CASCADE,
+    image_url   TEXT,
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+    PRIMARY KEY (question_id, value)
+);
+
+CREATE INDEX idx_options_created_at ON options(created_at ASC);
+
+----------------------
+--- Text Questions ---
+----------------------
+
+-- To ensure mutual exclusivity of subtypes, we create
+-- a "constant" unique type to the subquestion that doesn't need
+-- to be filled, and combine that with the primary key to
+-- reference the parent table (id & type)
+
+CREATE TABLE text_questions (
+    id              UUID PRIMARY KEY REFERENCES questions(id) ON DELETE CASCADE,
+    is_short_text   BOOLEAN NOT NULL DEFAULT TRUE,
+
+    type question_type NOT NULL DEFAULT 'text' CHECK (type = 'text'),
+    FOREIGN KEY (id, type) REFERENCES questions(id, type)
+);
+
+--------------------------------------------------------------------------------
+
+-- For Updating scripts.last_modified_at whenever
+-- a sub entity is changed
+
+CREATE TRIGGER trg_questions_update_scripts_on_change
+AFTER INSERT OR UPDATE OR DELETE ON questions
+FOR EACH ROW
+EXECUTE FUNCTION update_scripts_last_modified_at();
+
+CREATE TRIGGER trg_answer_keys_update_scripts_on_change
+AFTER INSERT OR UPDATE OR DELETE ON answer_keys
+FOR EACH ROW
+EXECUTE FUNCTION update_scripts_last_modified_at();
+
+CREATE TRIGGER trg_choice_questions_update_scripts_on_change
+AFTER INSERT OR UPDATE OR DELETE ON choice_questions
+FOR EACH ROW
+EXECUTE FUNCTION update_scripts_last_modified_at();
+
+CREATE TRIGGER trg_text_questions_update_scripts_on_change
+AFTER INSERT OR UPDATE OR DELETE ON text_questions
+FOR EACH ROW
+EXECUTE FUNCTION update_scripts_last_modified_at();
+
+CREATE TRIGGER trg_options_update_scripts_on_change
+AFTER INSERT OR UPDATE OR DELETE ON options
+FOR EACH ROW
+EXECUTE FUNCTION update_scripts_last_modified_at();
+
+--------------------------------------------------------------------------------
+
+
+
+--------------------------------------------------------------------------------
+--- SESSIONS -------------------------------------------------------------------
+--------------------------------------------------------------------------------
+
+CREATE TYPE session_status AS ENUM (
+    'closed',
+    'open',
+    'started',
+    'ended'
+);
+
+-- CREATE TABLE session_schedules (
+--     id              UUID PRIMARY KEY REFERENCES sessions(id),
+--     start_time      TIMESTAMPTZ,
+--     duration_mins   INTEGER CHECK (duration_mins > 0),
+
+--     start_task_id   TEXT,
+--     end_task_id     TEXT
+-- );
+
+CREATE TABLE sessions (
+    id      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    title   VARCHAR(200) NOT NULL,
+    status  session_status NOT NULL DEFAULT 'closed',
+
+    question_count  INTEGER DEFAULT NULL,
+    started_at      TIMESTAMPTZ DEFAULT NULL,
+    ended_at        TIMESTAMPTZ DEFAULT NULL,
+    join_code       VARCHAR(10) NOT NULL UNIQUE,
+
+    creator_id  UUID REFERENCES examiners(id) NOT NULL,
+    script_id   UUID REFERENCES scripts(id) NOT NULL
+);
+
+--------------------------------------------------------------------------------
+
+
+
+--------------------------------------------------------------------------------
+--- SUBMISSIONS ----------------------------------------------------------------
+--------------------------------------------------------------------------------
+
+CREATE TYPE submission_status AS ENUM (
+    'joined',
+    'editable',
+    'submitted',
+    'graded'
+);
+
+CREATE TABLE submissions (
+    id      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    grade   INTEGER CHECK (grade >= 0),
+    status  submission_status NOT NULL DEFAULT 'editable',
+
+    submitted_at    TIMESTAMPTZ,
+    joined_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    examinee_id UUID REFERENCES examinees(id) ON DELETE CASCADE NOT NULL,
+    session_id UUID REFERENCES sessions(id) ON DELETE CASCADE NOT NULL,
+    UNIQUE (examinee_id, session_id)
+);
+
+--                      [ AnswerValue
+--                      [ AnswerValue
+-- Answer ------------- [ AnswerValue
+-- -> grade: INT        [ AnswerValue
+--                      [ AnswerValue
+
+CREATE TABLE answers (
+    submission_id   UUID NOT NULL REFERENCES submissions(id) ON DELETE CASCADE,
+    question_id     UUID NOT NULL REFERENCES questions(id) ON DELETE CASCADE,
+    grade           INTEGER CHECK (grade >= 0),
+    PRIMARY KEY (submission_id, question_id)
+);
+
+CREATE TABLE answer_values (
+    value           TEXT NOT NULL,
+    submission_id   UUID NOT NULL REFERENCES submissions(id) ON DELETE CASCADE,
+    question_id     UUID NOT NULL REFERENCES questions(id) ON DELETE CASCADE,
+
+    PRIMARY KEY (submission_id, question_id, value),
+    FOREIGN KEY (submission_id, question_id)
+        REFERENCES answers(submission_id, question_id) ON DELETE CASCADE
+);
+
+--------------------------------------------------------------------------------
