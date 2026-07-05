@@ -52,10 +52,11 @@ WHERE sessions.status = 'closed'
 ----------------------------------------------------
 -- name: OpenSession :one
 
-UPDATE sessions SET status = 'open'
+UPDATE sessions SET
+    status = 'open'
 WHERE sessions.id = $1
     AND sessions.status = 'closed'
-RETURNING *;
+RETURNING id;
 
 
 -- Puts the session in CLOSED mode (default mode). While in
@@ -64,10 +65,11 @@ RETURNING *;
 -----------------------------------------------------------
 -- name: CloseSession :one
 
-UPDATE sessions SET states = 'closed'
+UPDATE sessions SET
+    status = 'closed'
 WHERE sessions.id = $1
     AND sessions.status = 'open'
-RETURNING *;
+RETURNING id;
 
 
 -- Sets the session to STARTED mode. Only sessions in OPEN
@@ -87,7 +89,7 @@ UPDATE scripts SET locked = true
 FROM updated_session
 WHERE scripts.id = updated_session.script_id
     AND scripts.locked != true
-RETURNING scripts.*;
+RETURNING updated_session.id;
 
 
 -- Sets the session to ENDED mode. Only sessions in STARTED
@@ -100,7 +102,7 @@ UPDATE sessions SET
     ended_at    = now()
 WHERE sessions.id = $1
     AND sessions.status = 'started'
-RETURNING *;
+RETURNING id;
 
 --------------------------------------------------------------------------------
 --------------------------------------------------------------------------------

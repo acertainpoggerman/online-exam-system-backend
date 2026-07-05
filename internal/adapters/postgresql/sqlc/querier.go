@@ -15,7 +15,7 @@ type Querier interface {
 	// CLOSED mode, examinees cannot join the session. Only
 	// sessions in OPEN mode can be closed.
 	//---------------------------------------------------------
-	CloseSession(ctx context.Context, id uuid.UUID) (Session, error)
+	CloseSession(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
 	CreateAnswerValue(ctx context.Context, arg CreateAnswerValueParams) error
 	CreateAnswerValues(ctx context.Context, arg []CreateAnswerValuesParams) (int64, error)
 	//---------------------------------------------------------------
@@ -47,7 +47,7 @@ type Querier interface {
 	// Sets the session to ENDED mode. Only sessions in STARTED
 	// mode can be started.
 	//----------------------------------------------------------
-	EndSession(ctx context.Context, id uuid.UUID) (Session, error)
+	EndSession(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
 	// Finds the answer key for a question as a list
 	//----------------------------------------------
 	FindAnswerKeyForQuestion(ctx context.Context, questionID uuid.UUID) ([]string, error)
@@ -119,7 +119,7 @@ type Querier interface {
 	// examinees can join the session. Only sessions in
 	// CLOSED mode can be opened.
 	//--------------------------------------------------
-	OpenSession(ctx context.Context, id uuid.UUID) (Session, error)
+	OpenSession(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
 	//---------------------------------------------------------------
 	//- Answer Key --------------------------------------------------
 	//---------------------------------------------------------------
@@ -149,7 +149,7 @@ type Querier interface {
 	// Sets the session to STARTED mode. Only sessions in OPEN
 	// mode can be started.
 	//----------------------------------------------------------
-	StartSession(ctx context.Context, id uuid.UUID) (Script, error)
+	StartSession(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
 	//---------------------------------------------------------------
 	//- Manipulating Questions --------------------------------------
 	//---------------------------------------------------------------

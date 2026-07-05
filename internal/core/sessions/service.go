@@ -18,8 +18,11 @@ type SessionService interface {
 	UpdateSessionByID(ctx context.Context, user store.User, sessionID uuid.UUID, data CreateSessionBody) (Session, error)
 
 	JoinSessionByCode(ctx context.Context, user store.User, joinCode string) error
-	// StartSessionByID(ctx context.Context, user store.User, sessionID uuid.UUID) error
-	// EndSessionByID(ctx context.Context, user store.User, sessionID uuid.UUID) error
+
+	OpenSession(ctx context.Context, user store.User, sessionID uuid.UUID) error
+	CloseSession(ctx context.Context, user store.User, sessionID uuid.UUID) error
+	StartSession(ctx context.Context, user store.User, sessionID uuid.UUID) error
+	EndSession(ctx context.Context, user store.User, sessionID uuid.UUID) error
 }
 
 type ExtSessionService interface {
@@ -53,98 +56,154 @@ func (svc *sessionService) JoinSessionByCode(ctx context.Context, user store.Use
 	return nil
 }
 
-// func (svc *sessionService) StartSessionByID(ctx context.Context, user store.User, sessionID uuid.UUID) error {
+func (svc *sessionService) StartSession(ctx context.Context, user store.User, sessionID uuid.UUID) error {
 
-// 	if user.Role != store.UserRoleExaminer {
-// 		return fmt.Errorf("Role not allowed: %s", user.Role)
-// 	}
+	if user.Role != store.UserRoleExaminer {
+		return fmt.Errorf("Role not allowed: %s", user.Role)
+	}
 
-// 	session, err := svc.q.FindSessionByID(ctx, sessionID)
-// 	if err != nil {
-// 		return err
-// 	}
-// 	if session.CreatorID != user.ID {
-// 		return fmt.Errorf("User does not own resource")
-// 	}
-// 	if session.Status != store.SessionStatusClosed {
-// 		return fmt.Errorf("Cannot start this session, session has status: %s", session.Status)
-// 	}
+	session, err := svc.q.FindSessionByID(ctx, sessionID)
+	if err != nil {
+		return err
+	}
+	if session.CreatorID != user.ID {
+		return fmt.Errorf("User does not own resource")
+	}
 
-// 	// Updating session status in pool
+	// Updating session status
 
-// 	tx, err := svc.pool.Begin(ctx)
-// 	if err != nil {
-// 		return err
-// 	}
-// 	defer tx.Rollback(ctx)
-// 	qtx := svc.q.WithTx(tx)
+	tx, err := svc.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	qtx := svc.q.WithTx(tx)
 
-// 	qtx.UpdateSessionStatusByID(ctx, store.UpdateSessionStatusByIDParams{
-// 		ID:     sessionID,
-// 		Status: store.SessionStatusStarted,
-// 	})
+	if _, err := qtx.StartSession(ctx, sessionID); err != nil {
+		return err
+	}
 
-// 	// Publishing Session Event
+	// ------------------------------------------------------------------------------------
+	// --- Publishing Session Event -------------------------------------------------------
+	// ------------------------------------------------------------------------------------
 
-// 	event := SessionEvent{
-// 		Type: EventTypeSessionStarted,
-// 		Data: json.Wrapper{"script_id": session.ScriptID},
-// 	}
-// 	payload, err := json.Marshal(event)
-// 	if err != nil {
-// 		return err
-// 	}
-// 	if err := svc.rdb.Publish(ctx, sessionID.String(), payload).Err(); err != nil {
-// 		return err
-// 	}
+	// event := SessionEvent{
+	// 	Type: EventTypeSessionStarted,
+	// 	Data: json.Wrapper{"script_id": session.ScriptID},
+	// }
+	// payload, err := json.Marshal(event)
+	// if err != nil {
+	// 	return err
+	// }
+	// if err := svc.rdb.Publish(ctx, sessionID.String(), payload).Err(); err != nil {
+	// 	return err
+	// }
 
-// 	return tx.Commit(ctx)
-// }
+	return tx.Commit(ctx)
+}
 
-// func (svc *sessionService) EndSessionByID(ctx context.Context, user store.User, sessionID uuid.UUID) error {
+func (svc *sessionService) EndSession(ctx context.Context, user store.User, sessionID uuid.UUID) error {
 
-// 	if user.Role != store.UserRoleExaminer {
-// 		return fmt.Errorf("Role not allowed: %s", user.Role)
-// 	}
+	if user.Role != store.UserRoleExaminer {
+		return fmt.Errorf("Role not allowed: %s", user.Role)
+	}
 
-// 	session, err := svc.q.FindSessionByID(ctx, sessionID)
-// 	if err != nil {
-// 		return err
-// 	}
-// 	if session.CreatorID != user.ID {
-// 		return fmt.Errorf("User does not own resource")
-// 	}
-// 	if session.Status != store.SessionStatusStarted {
-// 		return fmt.Errorf("Cannot end this session, session has status: %s", session.Status)
-// 	}
+	session, err := svc.q.FindSessionByID(ctx, sessionID)
+	if err != nil {
+		return err
+	}
+	if session.CreatorID != user.ID {
+		return fmt.Errorf("User does not own resource")
+	}
 
-// 	// Updating session status in pool
+	// Updating session status
 
-// 	tx, err := svc.pool.Begin(ctx)
-// 	if err != nil {
-// 		return err
-// 	}
-// 	defer tx.Rollback(ctx)
-// 	qtx := svc.q.WithTx(tx)
+	tx, err := svc.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	qtx := svc.q.WithTx(tx)
 
-// 	qtx.UpdateSessionStatusByID(ctx, store.UpdateSessionStatusByIDParams{
-// 		ID:     sessionID,
-// 		Status: store.SessionStatusEnded,
-// 	})
+	if _, err := qtx.EndSession(ctx, sessionID); err != nil {
+		return err
+	}
 
-// 	// Publishing Session Event
+	// ------------------------------------------------------------------------------------
+	// --- Publishing Session Event -------------------------------------------------------
+	// ------------------------------------------------------------------------------------
 
-// 	event := SessionEvent{Type: EventTypeSessionEnded}
-// 	payload, err := json.Marshal(event)
-// 	if err != nil {
-// 		return err
-// 	}
-// 	if err := svc.rdb.Publish(ctx, sessionID.String(), payload).Err(); err != nil {
-// 		return err
-// 	}
+	// event := SessionEvent{Type: EventTypeSessionEnded}
+	// payload, err := json.Marshal(event)
+	// if err != nil {
+	// 	return err
+	// }
+	// if err := svc.rdb.Publish(ctx, sessionID.String(), payload).Err(); err != nil {
+	// 	return err
+	// }
 
-// 	return tx.Commit(ctx)
-// }
+	return tx.Commit(ctx)
+}
+
+func (svc *sessionService) OpenSession(ctx context.Context, user store.User, sessionID uuid.UUID) error {
+
+	if user.Role != store.UserRoleExaminer {
+		return fmt.Errorf("Role not allowed: %s", user.Role)
+	}
+
+	session, err := svc.q.FindSessionByID(ctx, sessionID)
+	if err != nil {
+		return err
+	}
+	if session.CreatorID != user.ID {
+		return fmt.Errorf("User does not own resource")
+	}
+
+	// Updating session status
+
+	tx, err := svc.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	qtx := svc.q.WithTx(tx)
+
+	if _, err := qtx.OpenSession(ctx, sessionID); err != nil {
+		return err
+	}
+
+	return tx.Commit(ctx)
+}
+
+func (svc *sessionService) CloseSession(ctx context.Context, user store.User, sessionID uuid.UUID) error {
+
+	if user.Role != store.UserRoleExaminer {
+		return fmt.Errorf("Role not allowed: %s", user.Role)
+	}
+
+	session, err := svc.q.FindSessionByID(ctx, sessionID)
+	if err != nil {
+		return err
+	}
+	if session.CreatorID != user.ID {
+		return fmt.Errorf("User does not own resource")
+	}
+
+	// Updating session status
+
+	tx, err := svc.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	qtx := svc.q.WithTx(tx)
+
+	if _, err := qtx.CloseSession(ctx, sessionID); err != nil {
+		return err
+	}
+
+	return tx.Commit(ctx)
+}
 
 // ------------------------------------------------------------------------------------
 // --- CRUD Session Services ----------------------------------------------------------
@@ -164,10 +223,10 @@ func (svc *sessionService) CreateSession(ctx context.Context, user store.User, d
 	qtx := svc.q.WithTx(tx)
 
 	id, err := qtx.CreateSession(ctx, store.CreateSessionParams{
+		JoinCode:  generateSessionCode(10),
 		CreatorID: user.ID,
 		Title:     data.Title,
 		ScriptID:  data.ScriptID,
-		JoinCode:  generateSessionCode(10),
 	})
 	if err != nil {
 		return "", err

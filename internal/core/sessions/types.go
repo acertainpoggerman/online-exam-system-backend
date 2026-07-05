@@ -1,6 +1,8 @@
 package sessions
 
 import (
+	"math/rand/v2"
+
 	store "github.com/acertainpoggerman/online-exam-system/internal/adapters/postgresql/sqlc"
 	"github.com/google/uuid"
 )
@@ -30,7 +32,8 @@ type SessionEvent struct {
 
 func generateSessionCode(n int) (code string) {
 	chars := "0123456789abcdefghijklmnopqrstuvwxyz"
-	for i := range n {
+	for _ = range n {
+		i := rand.IntN(len(chars))
 		code += string(chars[i])
 	}
 	return

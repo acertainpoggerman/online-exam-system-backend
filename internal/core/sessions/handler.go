@@ -28,8 +28,10 @@ func (h *SessionHandler) RegisterRoutes(r *http.ServeMux) {
 	r.HandleFunc("GET /sessions/{session_id}", h.getSessionByID)
 	r.HandleFunc("PUT /sessions/{session_id}", h.putSessionByID)
 
-	// r.HandleFunc("POST /sessions/{session_id}/start", h.startSessionByID)
-	// r.HandleFunc("POST /sessions/{session_id}/end", h.endSessionByID)
+	r.HandleFunc("POST /sessions/{session_id}/open", h.openSessionByID)
+	r.HandleFunc("POST /sessions/{session_id}/close", h.closeSessionByID)
+	r.HandleFunc("POST /sessions/{session_id}/start", h.startSessionByID)
+	r.HandleFunc("POST /sessions/{session_id}/end", h.endSessionByID)
 }
 
 func (h *SessionHandler) RegisterWebsocketRoutes(r *http.ServeMux) {
@@ -74,47 +76,89 @@ func (h *SessionHandler) RegisterWebsocketRoutes(r *http.ServeMux) {
 // 	}
 // }
 
-// func (h *SessionHandler) startSessionByID(w http.ResponseWriter, r *http.Request) {
+func (h *SessionHandler) openSessionByID(w http.ResponseWriter, r *http.Request) {
 
-// 	user, err := jwt.GetUserDataFromContext(r.Context())
-// 	if err != nil {
-// 		json.WriteJSON(w, http.StatusBadRequest, "Could not get user", nil)
-// 		return
-// 	}
+	user, err := jwt.GetUserDataFromContext(r.Context())
+	if err != nil {
+		json.WriteJSON(w, http.StatusBadRequest, "Could not get user", nil)
+		return
+	}
 
-// 	sessionID, err := uuid.Parse(r.PathValue("session_id"))
-// 	if err != nil {
-// 		json.WriteJSON(w, http.StatusBadRequest, "Invalid session ID", nil)
-// 	}
+	sessionID, err := uuid.Parse(r.PathValue("session_id"))
+	if err != nil {
+		json.WriteJSON(w, http.StatusBadRequest, "Invalid session ID", nil)
+	}
 
-// 	if err := h.svc.StartSessionByID(r.Context(), user, sessionID); err != nil {
-// 		json.WriteJSON(w, http.StatusInternalServerError, err.Error(), nil)
-// 		return
-// 	}
+	if err := h.svc.OpenSession(r.Context(), user, sessionID); err != nil {
+		json.WriteJSON(w, http.StatusInternalServerError, err.Error(), nil)
+		return
+	}
 
-// 	json.WriteJSON(w, http.StatusNoContent, nil, nil)
-// }
+	json.WriteJSON(w, http.StatusNoContent, nil, nil)
+}
 
-// func (h *SessionHandler) endSessionByID(w http.ResponseWriter, r *http.Request) {
+func (h *SessionHandler) closeSessionByID(w http.ResponseWriter, r *http.Request) {
 
-// 	user, err := jwt.GetUserDataFromContext(r.Context())
-// 	if err != nil {
-// 		json.WriteJSON(w, http.StatusBadRequest, "Could not get user", nil)
-// 		return
-// 	}
+	user, err := jwt.GetUserDataFromContext(r.Context())
+	if err != nil {
+		json.WriteJSON(w, http.StatusBadRequest, "Could not get user", nil)
+		return
+	}
 
-// 	sessionID, err := uuid.Parse(r.PathValue("session_id"))
-// 	if err != nil {
-// 		json.WriteJSON(w, http.StatusBadRequest, "Invalid session ID", nil)
-// 	}
+	sessionID, err := uuid.Parse(r.PathValue("session_id"))
+	if err != nil {
+		json.WriteJSON(w, http.StatusBadRequest, "Invalid session ID", nil)
+	}
 
-// 	if err := h.svc.EndSessionByID(r.Context(), user, sessionID); err != nil {
-// 		json.WriteJSON(w, http.StatusInternalServerError, err.Error(), nil)
-// 		return
-// 	}
+	if err := h.svc.CloseSession(r.Context(), user, sessionID); err != nil {
+		json.WriteJSON(w, http.StatusInternalServerError, err.Error(), nil)
+		return
+	}
 
-// 	json.WriteJSON(w, http.StatusNoContent, nil, nil)
-// }
+	json.WriteJSON(w, http.StatusNoContent, nil, nil)
+}
+
+func (h *SessionHandler) startSessionByID(w http.ResponseWriter, r *http.Request) {
+
+	user, err := jwt.GetUserDataFromContext(r.Context())
+	if err != nil {
+		json.WriteJSON(w, http.StatusBadRequest, "Could not get user", nil)
+		return
+	}
+
+	sessionID, err := uuid.Parse(r.PathValue("session_id"))
+	if err != nil {
+		json.WriteJSON(w, http.StatusBadRequest, "Invalid session ID", nil)
+	}
+
+	if err := h.svc.StartSession(r.Context(), user, sessionID); err != nil {
+		json.WriteJSON(w, http.StatusInternalServerError, err.Error(), nil)
+		return
+	}
+
+	json.WriteJSON(w, http.StatusNoContent, nil, nil)
+}
+
+func (h *SessionHandler) endSessionByID(w http.ResponseWriter, r *http.Request) {
+
+	user, err := jwt.GetUserDataFromContext(r.Context())
+	if err != nil {
+		json.WriteJSON(w, http.StatusBadRequest, "Could not get user", nil)
+		return
+	}
+
+	sessionID, err := uuid.Parse(r.PathValue("session_id"))
+	if err != nil {
+		json.WriteJSON(w, http.StatusBadRequest, "Invalid session ID", nil)
+	}
+
+	if err := h.svc.EndSession(r.Context(), user, sessionID); err != nil {
+		json.WriteJSON(w, http.StatusInternalServerError, err.Error(), nil)
+		return
+	}
+
+	json.WriteJSON(w, http.StatusNoContent, nil, nil)
+}
 
 // -----------------------------------------------------------------------
 // --- Basic CRUD Handlers -----------------------------------------------

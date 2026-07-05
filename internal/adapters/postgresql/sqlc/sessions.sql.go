@@ -13,31 +13,21 @@ import (
 
 const closeSession = `-- name: CloseSession :one
 
-UPDATE sessions SET states = 'closed'
+UPDATE sessions SET
+    status = 'closed'
 WHERE sessions.id = $1
     AND sessions.status = 'open'
-RETURNING id, title, status, question_count, started_at, ended_at, join_code, creator_id, script_id
+RETURNING id
 `
 
 // Puts the session in CLOSED mode (default mode). While in
 // CLOSED mode, examinees cannot join the session. Only
 // sessions in OPEN mode can be closed.
 // ---------------------------------------------------------
-func (q *Queries) CloseSession(ctx context.Context, id uuid.UUID) (Session, error) {
+func (q *Queries) CloseSession(ctx context.Context, id uuid.UUID) (uuid.UUID, error) {
 	row := q.db.QueryRow(ctx, closeSession, id)
-	var i Session
-	err := row.Scan(
-		&i.ID,
-		&i.Title,
-		&i.Status,
-		&i.QuestionCount,
-		&i.StartedAt,
-		&i.EndedAt,
-		&i.JoinCode,
-		&i.CreatorID,
-		&i.ScriptID,
-	)
-	return i, err
+	err := row.Scan(&id)
+	return id, err
 }
 
 const createSession = `-- name: CreateSession :one
@@ -86,27 +76,16 @@ UPDATE sessions SET
     ended_at    = now()
 WHERE sessions.id = $1
     AND sessions.status = 'started'
-RETURNING id, title, status, question_count, started_at, ended_at, join_code, creator_id, script_id
+RETURNING id
 `
 
 // Sets the session to ENDED mode. Only sessions in STARTED
 // mode can be started.
 // ----------------------------------------------------------
-func (q *Queries) EndSession(ctx context.Context, id uuid.UUID) (Session, error) {
+func (q *Queries) EndSession(ctx context.Context, id uuid.UUID) (uuid.UUID, error) {
 	row := q.db.QueryRow(ctx, endSession, id)
-	var i Session
-	err := row.Scan(
-		&i.ID,
-		&i.Title,
-		&i.Status,
-		&i.QuestionCount,
-		&i.StartedAt,
-		&i.EndedAt,
-		&i.JoinCode,
-		&i.CreatorID,
-		&i.ScriptID,
-	)
-	return i, err
+	err := row.Scan(&id)
+	return id, err
 }
 
 const findSessionByID = `-- name: FindSessionByID :one
@@ -195,10 +174,11 @@ const openSession = `-- name: OpenSession :one
 
 
 
-UPDATE sessions SET status = 'open'
+UPDATE sessions SET
+    status = 'open'
 WHERE sessions.id = $1
     AND sessions.status = 'closed'
-RETURNING id, title, status, question_count, started_at, ended_at, join_code, creator_id, script_id
+RETURNING id
 `
 
 // ------------------------------------------------------------------------------
@@ -211,21 +191,10 @@ RETURNING id, title, status, question_count, started_at, ended_at, join_code, cr
 // examinees can join the session. Only sessions in
 // CLOSED mode can be opened.
 // --------------------------------------------------
-func (q *Queries) OpenSession(ctx context.Context, id uuid.UUID) (Session, error) {
+func (q *Queries) OpenSession(ctx context.Context, id uuid.UUID) (uuid.UUID, error) {
 	row := q.db.QueryRow(ctx, openSession, id)
-	var i Session
-	err := row.Scan(
-		&i.ID,
-		&i.Title,
-		&i.Status,
-		&i.QuestionCount,
-		&i.StartedAt,
-		&i.EndedAt,
-		&i.JoinCode,
-		&i.CreatorID,
-		&i.ScriptID,
-	)
-	return i, err
+	err := row.Scan(&id)
+	return id, err
 }
 
 const startSession = `-- name: StartSession :one
@@ -242,26 +211,16 @@ UPDATE scripts SET locked = true
 FROM updated_session
 WHERE scripts.id = updated_session.script_id
     AND scripts.locked != true
-RETURNING scripts.id, scripts.title, scripts.heading, scripts.description, scripts.locked, scripts.created_at, scripts.last_modified_at, scripts.creator_id
+RETURNING updated_session.id
 `
 
 // Sets the session to STARTED mode. Only sessions in OPEN
 // mode can be started.
 // ----------------------------------------------------------
-func (q *Queries) StartSession(ctx context.Context, id uuid.UUID) (Script, error) {
+func (q *Queries) StartSession(ctx context.Context, id uuid.UUID) (uuid.UUID, error) {
 	row := q.db.QueryRow(ctx, startSession, id)
-	var i Script
-	err := row.Scan(
-		&i.ID,
-		&i.Title,
-		&i.Heading,
-		&i.Description,
-		&i.Locked,
-		&i.CreatedAt,
-		&i.LastModifiedAt,
-		&i.CreatorID,
-	)
-	return i, err
+	err := row.Scan(&id)
+	return id, err
 }
 
 const updateSessionFields = `-- name: UpdateSessionFields :one
