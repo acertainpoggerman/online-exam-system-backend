@@ -103,7 +103,7 @@ WHERE scripts.id = $1;
 WITH deleted AS (
     DELETE FROM answer_keys
     WHERE answer_keys.question_id = $1
-) INSERT INTO options (
+) INSERT INTO answer_keys (
     question_id,
     value
 ) SELECT $1, unnest(@answer_key::text[]) FROM
@@ -142,9 +142,10 @@ WITH inserted AS (
 ) INSERT INTO choice_questions (
     id,
     is_multiple_choice
-) SELECT inserted.id, $3 FROM inserted
+) SELECT inserted.id, $3 FROM
+    inserted INNER JOIN scripts ON inserted.script_id = scripts.id
 WHERE scripts.id = @script_id::uuid
-    AND scripts.locked = false
+AND scripts.locked = false
 RETURNING id;
 
 
@@ -165,9 +166,10 @@ WITH inserted AS (
 ) INSERT INTO text_questions (
     id,
     is_short_text
-) SELECT inserted.id, $3 FROM inserted
+) SELECT inserted.id, $3 FROM
+    inserted INNER JOIN scripts ON inserted.script_id = scripts.id
 WHERE scripts.id = @script_id::uuid
-    AND scripts.locked = false
+AND scripts.locked = false
 RETURNING id;
 
 
@@ -220,9 +222,9 @@ WITH deleted AS (
 ) INSERT INTO text_questions (
     id,
     is_short_text
-) SELECT $1, $2 FROM questions
+) SELECT $1, $2 FROM
+    questions INNER JOIN scripts ON questions.script_id = scripts.id
 WHERE questions.id = $1
-    AND scripts.id = questions.script_id
     AND scripts.locked = false;
 
 
@@ -244,9 +246,9 @@ WITH deleted AS (
 ) INSERT INTO choice_questions (
     id,
     is_multiple_choice
-) SELECT $1, $2 FROM questions
+) SELECT $1, $2 FROM
+    questions INNER JOIN scripts ON questions.script_id = scripts.id
 WHERE questions.id = $1
-    AND scripts.id = questions.script_id
     AND scripts.locked = false;
 
 -----------------------------------------------------------------
