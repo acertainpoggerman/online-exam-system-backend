@@ -103,7 +103,7 @@ CREATE TABLE answer_keys (
 -- reference the parent table (id & type)
 
 CREATE TABLE choice_questions (
-    id                  UUID PRIMARY KEY,
+    id                  UUID PRIMARY KEY REFERENCES questions(id) ON DELETE CASCADE,
     is_multiple_choice  BOOLEAN NOT NULL DEFAULT TRUE,
 
     type question_type NOT NULL DEFAULT 'choice' CHECK (type = 'choice'),

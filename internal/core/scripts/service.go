@@ -406,7 +406,7 @@ func (svc *scriptService) CreateQuestion(ctx context.Context, user store.User, s
 		}
 
 		if err := qtx.ReplaceOptionsForQuestion(ctx, store.ReplaceOptionsForQuestionParams{
-			QuestionID: question.ID,
+			QuestionID: questionID,
 			Values:     values,
 			ImageUrls:  imgUrls,
 		}); err != nil {
@@ -437,7 +437,7 @@ func (svc *scriptService) CreateQuestion(ctx context.Context, user store.User, s
 	// --- Replacing the Question's Answer Key ------------------------------------------------
 
 	if err := qtx.ReplaceAnswerKeyForQuestion(ctx, store.ReplaceAnswerKeyForQuestionParams{
-		QuestionID: question.ID,
+		QuestionID: questionID,
 		AnswerKey:  question.AnswerKey,
 	}); err != nil {
 		return Question{}, err
