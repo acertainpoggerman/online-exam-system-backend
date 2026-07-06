@@ -10,11 +10,12 @@ import (
 	store "github.com/acertainpoggerman/online-exam-system/internal/adapters/postgresql/sqlc"
 	"github.com/acertainpoggerman/online-exam-system/internal/core/scripts"
 	"github.com/acertainpoggerman/online-exam-system/internal/core/sessions"
+	"github.com/acertainpoggerman/online-exam-system/internal/core/submissions"
 	"github.com/acertainpoggerman/online-exam-system/internal/core/users"
+	"github.com/acertainpoggerman/online-exam-system/internal/core/websocket"
 	"github.com/acertainpoggerman/online-exam-system/internal/middleware"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/redis/go-redis/v9"
 )
 
 func main() {
@@ -34,11 +35,11 @@ func main() {
 	}
 	repo := store.New(pool)
 
-	rdb := redis.NewClient(&redis.Options{
-		Addr:     "localhost:6379",
-		Password: "",
-		DB:       0,
-	})
+	// rdb := redis.NewClient(&redis.Options{
+	// 	Addr:     "localhost:6379",
+	// 	Password: "",
+	// 	DB:       0,
+	// })
 
 	// --------------------------------------------------------------------------
 	// --- Instatiating Routers -------------------------------------------------
@@ -52,11 +53,6 @@ func main() {
 	authedRouter := http.NewServeMux()
 	router.Handle("/", middleware.JWTAuth(jwtSecretKey)(authedRouter))
 
-	wsRouter := http.NewServeMux()
-	router.Handle("/ws/", middleware.WebsocketJWTAuth(jwtSecretKey)(
-		http.StripPrefix("/ws", wsRouter),
-	))
-
 	// --------------------------------------------------------------------------
 	// --- Instantiating Services -----------------------------------------------
 	// --------------------------------------------------------------------------
@@ -69,14 +65,17 @@ func main() {
 	scriptHandler := scripts.NewScriptHandler(scriptService)
 	scriptHandler.RegisterRoutes(authedRouter)
 
-	sessionService := sessions.NewSessionService(repo, pool, rdb)
+	submissionService := submissions.NewSubmissionService(repo, pool, scriptService, userService)
+	submissionHandler := submissions.NewSubmissionHandler(submissionService)
+	submissionHandler.RegisterRoutes(authedRouter)
+
+	hub := websocket.NewHub()
+	wsHandler := websocket.NewHandler(hub, jwtSecretKey)
+	wsHandler.RegisterRoutes(unauthedRouter)
+
+	sessionService := sessions.NewSessionService(repo, pool, submissionService, hub)
 	sessionHandler := sessions.NewSessionHandler(sessionService)
 	sessionHandler.RegisterRoutes(authedRouter)
-	sessionHandler.RegisterWebsocketRoutes(wsRouter)
-
-	// submissionService := submissions.NewSubmissionService(repo, pool, scriptService, userService, sessionService)
-	// submissionHandler := submissions.NewSubmissionHandler(submissionService)
-	// submissionHandler.RegisterRoutes(authedRouter)
 
 	// --------------------------------------------------------------------------
 	// --- Defining and Running Server ------------------------------------------

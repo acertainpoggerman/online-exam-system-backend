@@ -6,9 +6,11 @@ import (
 
 	store "github.com/acertainpoggerman/online-exam-system/internal/adapters/postgresql/sqlc"
 	"github.com/acertainpoggerman/online-exam-system/internal/common"
+	"github.com/acertainpoggerman/online-exam-system/internal/core/submissions"
+	"github.com/acertainpoggerman/online-exam-system/internal/core/websocket"
+	"github.com/acertainpoggerman/online-exam-system/internal/json"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/redis/go-redis/v9"
 )
 
 type SessionService interface {
@@ -17,7 +19,7 @@ type SessionService interface {
 	FindSessions(ctx context.Context, user store.User) ([]Session, error)
 	UpdateSessionByID(ctx context.Context, user store.User, sessionID uuid.UUID, data CreateSessionBody) (Session, error)
 
-	JoinSessionByCode(ctx context.Context, user store.User, joinCode string) error
+	JoinSessionByCode(ctx context.Context, user store.User, joinCode string) (submissions.Submission, error)
 
 	OpenSession(ctx context.Context, user store.User, sessionID uuid.UUID) error
 	CloseSession(ctx context.Context, user store.User, sessionID uuid.UUID) error
@@ -32,28 +34,37 @@ type ExtSessionService interface {
 type sessionService struct {
 	q    *store.Queries
 	pool *pgxpool.Pool
-	rdb  *redis.Client
+	sub  submissions.ExtSubmissionService
+	hub  *websocket.Hub
 }
 
-func NewSessionService(q *store.Queries, pool *pgxpool.Pool, rdb *redis.Client) *sessionService {
-	return &sessionService{q, pool, rdb}
+func NewSessionService(
+	q *store.Queries,
+	pool *pgxpool.Pool,
+	sub submissions.ExtSubmissionService,
+	hub *websocket.Hub,
+) *sessionService {
+	return &sessionService{q, pool, sub, hub}
 }
 
 // ------------------------------------------------------------------------------------
 // --- Session Participation Services -------------------------------------------------
 // ------------------------------------------------------------------------------------
 
-func (svc *sessionService) JoinSessionByCode(ctx context.Context, user store.User, joinCode string) error {
+func (svc *sessionService) JoinSessionByCode(ctx context.Context, user store.User, joinCode string) (submissions.Submission, error) {
 
 	if user.Role != store.UserRoleExaminee {
-		return fmt.Errorf("Role not allowed: %s", user.Role)
+		return submissions.Submission{}, fmt.Errorf("Role not allowed: %s", user.Role)
 	}
 
-	if _, err := svc.q.FindSessionByJoinCode(ctx, joinCode); err != nil {
-		return err
+	session, err := svc.q.FindSessionByJoinCode(ctx, joinCode)
+	if err != nil {
+		return submissions.Submission{}, err
 	}
 
-	return nil
+	return svc.sub.CreateSubmission(ctx, user, submissions.CreateSubmissionBody{
+		SessionID: session.ID,
+	})
 }
 
 func (svc *sessionService) StartSession(ctx context.Context, user store.User, sessionID uuid.UUID) error {
@@ -79,25 +90,26 @@ func (svc *sessionService) StartSession(ctx context.Context, user store.User, se
 	defer tx.Rollback(ctx)
 	qtx := svc.q.WithTx(tx)
 
-	if _, err := qtx.StartSession(ctx, sessionID); err != nil {
+	started, err := qtx.StartSession(ctx, sessionID)
+	if err != nil {
+		return err
+	}
+
+	if err := qtx.SetSubmissionsEditableForSession(ctx, started.ID); err != nil {
 		return err
 	}
 
 	// ------------------------------------------------------------------------------------
-	// --- Publishing Session Event -------------------------------------------------------
-	// ------------------------------------------------------------------------------------
+	// --- Broadcasting Start Event -------------------------------------------------------
 
-	// event := SessionEvent{
-	// 	Type: EventTypeSessionStarted,
-	// 	Data: json.Wrapper{"script_id": session.ScriptID},
-	// }
-	// payload, err := json.Marshal(event)
-	// if err != nil {
-	// 	return err
-	// }
-	// if err := svc.rdb.Publish(ctx, sessionID.String(), payload).Err(); err != nil {
-	// 	return err
-	// }
+	svc.hub.Broadcast(sessionID, websocket.Message{
+		Type: websocket.MessageTypeSessionStarted,
+		Data: json.Wrapper{
+			"session_id": sessionID,
+			"script_id":  session.ScriptID,
+			"started_at": started.StartedAt,
+		},
+	})
 
 	return tx.Commit(ctx)
 }
@@ -116,7 +128,8 @@ func (svc *sessionService) EndSession(ctx context.Context, user store.User, sess
 		return fmt.Errorf("User does not own resource")
 	}
 
-	// Updating session status
+	// ------------------------------------------------------------------------------------
+	// --- Updating session status --------------------------------------------------------
 
 	tx, err := svc.pool.Begin(ctx)
 	if err != nil {
@@ -129,18 +142,16 @@ func (svc *sessionService) EndSession(ctx context.Context, user store.User, sess
 		return err
 	}
 
-	// ------------------------------------------------------------------------------------
-	// --- Publishing Session Event -------------------------------------------------------
-	// ------------------------------------------------------------------------------------
+	if err := qtx.SubmitSubmissionsForSession(ctx, sessionID); err != nil {
+		return err
+	}
 
-	// event := SessionEvent{Type: EventTypeSessionEnded}
-	// payload, err := json.Marshal(event)
-	// if err != nil {
-	// 	return err
-	// }
-	// if err := svc.rdb.Publish(ctx, sessionID.String(), payload).Err(); err != nil {
-	// 	return err
-	// }
+	// ------------------------------------------------------------------------------------
+	// --- Broadcasting End Event ---------------------------------------------------------
+
+	svc.hub.Broadcast(sessionID, websocket.Message{
+		Type: websocket.MessageTypeSessionStarted,
+	})
 
 	return tx.Commit(ctx)
 }
@@ -159,7 +170,8 @@ func (svc *sessionService) OpenSession(ctx context.Context, user store.User, ses
 		return fmt.Errorf("User does not own resource")
 	}
 
-	// Updating session status
+	// ------------------------------------------------------------------------------------
+	// --- Updating session status --------------------------------------------------------
 
 	tx, err := svc.pool.Begin(ctx)
 	if err != nil {

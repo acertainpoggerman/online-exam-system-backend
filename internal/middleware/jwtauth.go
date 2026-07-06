@@ -46,7 +46,7 @@ func JWTAuth(secretKey []byte) func(next http.Handler) http.Handler {
 				tokenString = cookie.Value
 			}
 
-			userData, err := jwt.ValidateJWT(tokenString, []byte(secretKey))
+			userData, err := jwt.ValidateJWT(tokenString, secretKey)
 			if err != nil {
 				jwtAuthFailed(w, "Failed to validate JWT token")
 				return

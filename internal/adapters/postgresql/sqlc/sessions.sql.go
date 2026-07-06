@@ -7,6 +7,7 @@ package store
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -17,17 +18,28 @@ UPDATE sessions SET
     status = 'closed'
 WHERE sessions.id = $1
     AND sessions.status = 'open'
-RETURNING id
+RETURNING id, title, status, question_count, started_at, ended_at, join_code, creator_id, script_id
 `
 
 // Puts the session in CLOSED mode (default mode). While in
 // CLOSED mode, examinees cannot join the session. Only
 // sessions in OPEN mode can be closed.
 // ---------------------------------------------------------
-func (q *Queries) CloseSession(ctx context.Context, id uuid.UUID) (uuid.UUID, error) {
+func (q *Queries) CloseSession(ctx context.Context, id uuid.UUID) (Session, error) {
 	row := q.db.QueryRow(ctx, closeSession, id)
-	err := row.Scan(&id)
-	return id, err
+	var i Session
+	err := row.Scan(
+		&i.ID,
+		&i.Title,
+		&i.Status,
+		&i.QuestionCount,
+		&i.StartedAt,
+		&i.EndedAt,
+		&i.JoinCode,
+		&i.CreatorID,
+		&i.ScriptID,
+	)
+	return i, err
 }
 
 const createSession = `-- name: CreateSession :one
@@ -76,16 +88,27 @@ UPDATE sessions SET
     ended_at    = now()
 WHERE sessions.id = $1
     AND sessions.status = 'started'
-RETURNING id
+RETURNING id, title, status, question_count, started_at, ended_at, join_code, creator_id, script_id
 `
 
 // Sets the session to ENDED mode. Only sessions in STARTED
 // mode can be started.
 // ----------------------------------------------------------
-func (q *Queries) EndSession(ctx context.Context, id uuid.UUID) (uuid.UUID, error) {
+func (q *Queries) EndSession(ctx context.Context, id uuid.UUID) (Session, error) {
 	row := q.db.QueryRow(ctx, endSession, id)
-	err := row.Scan(&id)
-	return id, err
+	var i Session
+	err := row.Scan(
+		&i.ID,
+		&i.Title,
+		&i.Status,
+		&i.QuestionCount,
+		&i.StartedAt,
+		&i.EndedAt,
+		&i.JoinCode,
+		&i.CreatorID,
+		&i.ScriptID,
+	)
+	return i, err
 }
 
 const findSessionByID = `-- name: FindSessionByID :one
@@ -112,7 +135,9 @@ func (q *Queries) FindSessionByID(ctx context.Context, id uuid.UUID) (Session, e
 
 const findSessionByJoinCode = `-- name: FindSessionByJoinCode :one
 SELECT id, title, status, question_count, started_at, ended_at, join_code, creator_id, script_id FROM sessions
-WHERE sessions.join_code ILIKE $1 LIMIT 1
+WHERE sessions.join_code ILIKE $1
+    AND sessions.status = 'open'
+LIMIT 1
 `
 
 func (q *Queries) FindSessionByJoinCode(ctx context.Context, joinCode string) (Session, error) {
@@ -178,7 +203,7 @@ UPDATE sessions SET
     status = 'open'
 WHERE sessions.id = $1
     AND sessions.status = 'closed'
-RETURNING id
+RETURNING id, title, status, question_count, started_at, ended_at, join_code, creator_id, script_id
 `
 
 // ------------------------------------------------------------------------------
@@ -191,10 +216,21 @@ RETURNING id
 // examinees can join the session. Only sessions in
 // CLOSED mode can be opened.
 // --------------------------------------------------
-func (q *Queries) OpenSession(ctx context.Context, id uuid.UUID) (uuid.UUID, error) {
+func (q *Queries) OpenSession(ctx context.Context, id uuid.UUID) (Session, error) {
 	row := q.db.QueryRow(ctx, openSession, id)
-	err := row.Scan(&id)
-	return id, err
+	var i Session
+	err := row.Scan(
+		&i.ID,
+		&i.Title,
+		&i.Status,
+		&i.QuestionCount,
+		&i.StartedAt,
+		&i.EndedAt,
+		&i.JoinCode,
+		&i.CreatorID,
+		&i.ScriptID,
+	)
+	return i, err
 }
 
 const startSession = `-- name: StartSession :one
@@ -211,16 +247,39 @@ UPDATE scripts SET locked = true
 FROM updated_session
 WHERE scripts.id = updated_session.script_id
     AND scripts.locked != true
-RETURNING updated_session.id
+RETURNING updated_session.id, updated_session.title, updated_session.status, updated_session.question_count, updated_session.started_at, updated_session.ended_at, updated_session.join_code, updated_session.creator_id, updated_session.script_id
 `
+
+type StartSessionRow struct {
+	ID            uuid.UUID     `json:"id"`
+	Title         string        `json:"title"`
+	Status        SessionStatus `json:"status"`
+	QuestionCount *int32        `json:"question_count"`
+	StartedAt     *time.Time    `json:"started_at"`
+	EndedAt       *time.Time    `json:"ended_at"`
+	JoinCode      string        `json:"join_code"`
+	CreatorID     uuid.UUID     `json:"creator_id"`
+	ScriptID      uuid.UUID     `json:"script_id"`
+}
 
 // Sets the session to STARTED mode. Only sessions in OPEN
 // mode can be started.
 // ----------------------------------------------------------
-func (q *Queries) StartSession(ctx context.Context, id uuid.UUID) (uuid.UUID, error) {
+func (q *Queries) StartSession(ctx context.Context, id uuid.UUID) (StartSessionRow, error) {
 	row := q.db.QueryRow(ctx, startSession, id)
-	err := row.Scan(&id)
-	return id, err
+	var i StartSessionRow
+	err := row.Scan(
+		&i.ID,
+		&i.Title,
+		&i.Status,
+		&i.QuestionCount,
+		&i.StartedAt,
+		&i.EndedAt,
+		&i.JoinCode,
+		&i.CreatorID,
+		&i.ScriptID,
+	)
+	return i, err
 }
 
 const updateSessionFields = `-- name: UpdateSessionFields :one

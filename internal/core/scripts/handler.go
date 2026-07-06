@@ -23,7 +23,6 @@ func (h *ScriptHandler) RegisterRoutes(r *http.ServeMux) {
 	r.HandleFunc("GET /scripts", h.getScripts)
 	r.HandleFunc("GET /scripts/{script_id}", h.getScriptByID)
 	r.HandleFunc("PUT /scripts/{script_id}", h.putScript)
-	// r.HandleFunc("PATCH /scripts/{script_id}", h.patchScriptByID)
 	r.HandleFunc("DELETE /scripts/{script_id}", h.deleteScriptByID)
 
 	r.HandleFunc("POST /scripts/{script_id}/questions", h.postQuestion)
@@ -146,40 +145,6 @@ func (h *ScriptHandler) putScript(w http.ResponseWriter, r *http.Request) {
 
 	json.WriteJSON(w, http.StatusNoContent, nil, nil)
 }
-
-// func (h *ScriptHandler) patchScriptByID(w http.ResponseWriter, r *http.Request) {
-
-// 	user, err := jwt.GetUserDataFromContext(r.Context())
-// 	if err != nil {
-// 		json.WriteJSON(w, http.StatusBadRequest, json.Wrapper{"error": "User ID not found"}, nil)
-// 		return
-// 	}
-
-// 	scriptID, err := uuid.Parse(r.PathValue("script_id"))
-// 	if err != nil {
-// 		json.WriteJSON(w, http.StatusBadRequest, json.Wrapper{"error": err.Error()}, nil)
-// 		return
-// 	}
-
-// 	var body UpdateScriptBody
-// 	if err := json.ReadRequestBody(r, &body); err != nil {
-// 		json.WriteJSON(w, http.StatusBadRequest, err.Error(), nil)
-// 		return
-// 	}
-
-// 	script, err := h.svc.UpdateScriptByID(r.Context(), user, scriptID, body.IncludeScript, body.Actions)
-// 	if err != nil {
-// 		json.WriteJSON(w, http.StatusInternalServerError, json.Wrapper{"error": err.Error()}, nil)
-// 		return
-// 	}
-
-// 	if script != nil {
-// 		json.WriteJSON(w, http.StatusOK, json.Wrapper{"script": script}, nil)
-// 		return
-// 	}
-
-// 	json.WriteJSON(w, http.StatusNoContent, nil, nil)
-// }
 
 func (h *ScriptHandler) deleteScriptByID(w http.ResponseWriter, r *http.Request) {
 

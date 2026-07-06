@@ -680,7 +680,7 @@ func (q *Queries) UpdateQuestionFields(ctx context.Context, arg UpdateQuestionFi
 	return err
 }
 
-const updateScriptFields = `-- name: UpdateScriptFields :exec
+const updateScriptFields = `-- name: UpdateScriptFields :one
 
 UPDATE scripts SET
     title       = $2,
@@ -688,6 +688,7 @@ UPDATE scripts SET
     description = $4
 WHERE scripts.id = $1
     AND scripts.locked = false
+RETURNING id
 `
 
 type UpdateScriptFieldsParams struct {
@@ -699,14 +700,16 @@ type UpdateScriptFieldsParams struct {
 
 // Updates the script if possible
 // -------------------------------
-func (q *Queries) UpdateScriptFields(ctx context.Context, arg UpdateScriptFieldsParams) error {
-	_, err := q.db.Exec(ctx, updateScriptFields,
+func (q *Queries) UpdateScriptFields(ctx context.Context, arg UpdateScriptFieldsParams) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, updateScriptFields,
 		arg.ID,
 		arg.Title,
 		arg.Heading,
 		arg.Description,
 	)
-	return err
+	var id uuid.UUID
+	err := row.Scan(&id)
+	return id, err
 }
 
 const upsertChoiceQuestion = `-- name: UpsertChoiceQuestion :exec

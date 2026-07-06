@@ -59,7 +59,7 @@ func (h *UserHandler) registerUser(w http.ResponseWriter, r *http.Request) {
 		Path:     "/",
 	})
 
-	json.WriteJSON(w, http.StatusOK, nil, nil)
+	json.WriteJSON(w, http.StatusOK, json.Wrapper{"token": token}, nil)
 }
 
 func (h *UserHandler) loginUser(w http.ResponseWriter, r *http.Request) {
@@ -86,7 +86,7 @@ func (h *UserHandler) loginUser(w http.ResponseWriter, r *http.Request) {
 		Path:     "/",
 	})
 
-	json.WriteJSON(w, http.StatusOK, nil, nil)
+	json.WriteJSON(w, http.StatusOK, json.Wrapper{"token": token}, nil)
 }
 
 // Cookie-only. For clearing the cookies on the

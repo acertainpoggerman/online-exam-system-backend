@@ -37,7 +37,7 @@ type CreateAnswerValuesParams struct {
 const createSubmission = `-- name: CreateSubmission :one
 INSERT INTO submissions (
     session_id, examinee_id
-) VALUES ($1, $2) RETURNING id
+) VALUES ($1, $2) RETURNING id, grade, status, submitted_at, joined_at, examinee_id, session_id
 `
 
 type CreateSubmissionParams struct {
@@ -45,11 +45,19 @@ type CreateSubmissionParams struct {
 	ExamineeID uuid.UUID `json:"examinee_id"`
 }
 
-func (q *Queries) CreateSubmission(ctx context.Context, arg CreateSubmissionParams) (uuid.UUID, error) {
+func (q *Queries) CreateSubmission(ctx context.Context, arg CreateSubmissionParams) (Submission, error) {
 	row := q.db.QueryRow(ctx, createSubmission, arg.SessionID, arg.ExamineeID)
-	var id uuid.UUID
-	err := row.Scan(&id)
-	return id, err
+	var i Submission
+	err := row.Scan(
+		&i.ID,
+		&i.Grade,
+		&i.Status,
+		&i.SubmittedAt,
+		&i.JoinedAt,
+		&i.ExamineeID,
+		&i.SessionID,
+	)
+	return i, err
 }
 
 const deleteAnswerValuesByIDs = `-- name: DeleteAnswerValuesByIDs :execrows
@@ -68,6 +76,36 @@ func (q *Queries) DeleteAnswerValuesByIDs(ctx context.Context, arg DeleteAnswerV
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const findActiveSubmissionForScript = `-- name: FindActiveSubmissionForScript :one
+SELECT submissions.id, submissions.grade, submissions.status, submissions.submitted_at, submissions.joined_at, submissions.examinee_id, submissions.session_id FROM
+    submissions INNER JOIN sessions ON submissions.session_id = sessions.id
+    INNER JOIN scripts ON sessions.script_id = scripts.id
+WHERE scripts.id = $1
+    AND submissions.examinee_id = $2
+    AND submissions.status = 'editable'
+    AND sessions.status = 'started'
+`
+
+type FindActiveSubmissionForScriptParams struct {
+	ID         uuid.UUID `json:"id"`
+	ExamineeID uuid.UUID `json:"examinee_id"`
+}
+
+func (q *Queries) FindActiveSubmissionForScript(ctx context.Context, arg FindActiveSubmissionForScriptParams) (Submission, error) {
+	row := q.db.QueryRow(ctx, findActiveSubmissionForScript, arg.ID, arg.ExamineeID)
+	var i Submission
+	err := row.Scan(
+		&i.ID,
+		&i.Grade,
+		&i.Status,
+		&i.SubmittedAt,
+		&i.JoinedAt,
+		&i.ExamineeID,
+		&i.SessionID,
+	)
+	return i, err
 }
 
 const findAnswerValuesForQuestion = `-- name: FindAnswerValuesForQuestion :many
@@ -123,6 +161,33 @@ func (q *Queries) FindAnswersForSubmission(ctx context.Context, submissionID uui
 		return nil, err
 	}
 	return items, nil
+}
+
+const findSubmissionByExamineeAndSession = `-- name: FindSubmissionByExamineeAndSession :one
+SELECT id, grade, status, submitted_at, joined_at, examinee_id, session_id FROM submissions
+WHERE submissions.examinee_id = $1
+    AND submissions.session_id = $2
+LIMIT 1
+`
+
+type FindSubmissionByExamineeAndSessionParams struct {
+	ExamineeID uuid.UUID `json:"examinee_id"`
+	SessionID  uuid.UUID `json:"session_id"`
+}
+
+func (q *Queries) FindSubmissionByExamineeAndSession(ctx context.Context, arg FindSubmissionByExamineeAndSessionParams) (Submission, error) {
+	row := q.db.QueryRow(ctx, findSubmissionByExamineeAndSession, arg.ExamineeID, arg.SessionID)
+	var i Submission
+	err := row.Scan(
+		&i.ID,
+		&i.Grade,
+		&i.Status,
+		&i.SubmittedAt,
+		&i.JoinedAt,
+		&i.ExamineeID,
+		&i.SessionID,
+	)
+	return i, err
 }
 
 const findSubmissionByID = `-- name: FindSubmissionByID :one
@@ -206,6 +271,58 @@ func (q *Queries) FindSubmissionsForSession(ctx context.Context, sessionID uuid.
 		return nil, err
 	}
 	return items, nil
+}
+
+const setSubmissionsEditableForSession = `-- name: SetSubmissionsEditableForSession :exec
+UPDATE submissions SET
+    status = 'editable'
+WHERE submissions.session_id = $1
+`
+
+func (q *Queries) SetSubmissionsEditableForSession(ctx context.Context, sessionID uuid.UUID) error {
+	_, err := q.db.Exec(ctx, setSubmissionsEditableForSession, sessionID)
+	return err
+}
+
+const submitSubmission = `-- name: SubmitSubmission :one
+UPDATE submissions SET
+    status          = 'submitted',
+    submitted_at    = now()
+WHERE submissions.examinee_id = $1
+    AND submissions.session_id = $2
+RETURNING id, grade, status, submitted_at, joined_at, examinee_id, session_id
+`
+
+type SubmitSubmissionParams struct {
+	ExamineeID uuid.UUID `json:"examinee_id"`
+	SessionID  uuid.UUID `json:"session_id"`
+}
+
+func (q *Queries) SubmitSubmission(ctx context.Context, arg SubmitSubmissionParams) (Submission, error) {
+	row := q.db.QueryRow(ctx, submitSubmission, arg.ExamineeID, arg.SessionID)
+	var i Submission
+	err := row.Scan(
+		&i.ID,
+		&i.Grade,
+		&i.Status,
+		&i.SubmittedAt,
+		&i.JoinedAt,
+		&i.ExamineeID,
+		&i.SessionID,
+	)
+	return i, err
+}
+
+const submitSubmissionsForSession = `-- name: SubmitSubmissionsForSession :exec
+UPDATE submissions SET
+    status          = 'submitted',
+    submitted_at    = now()
+WHERE submissions.session_id = $1
+`
+
+func (q *Queries) SubmitSubmissionsForSession(ctx context.Context, sessionID uuid.UUID) error {
+	_, err := q.db.Exec(ctx, submitSubmissionsForSession, sessionID)
+	return err
 }
 
 const updateSubmissionGrade = `-- name: UpdateSubmissionGrade :exec

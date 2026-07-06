@@ -313,7 +313,7 @@ func (svc *scriptService) UpdateScriptFields(ctx context.Context, user store.Use
 	// ----------------------------------------------------------------------------------------
 	// --- Replacing Script Details -----------------------------------------------------------
 
-	if err := qtx.UpdateScriptFields(ctx, store.UpdateScriptFieldsParams{
+	if _, err := qtx.UpdateScriptFields(ctx, store.UpdateScriptFieldsParams{
 		ID:          scriptID,
 		Title:       data.Title,
 		Heading:     data.Heading,

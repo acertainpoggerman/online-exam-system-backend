@@ -13,21 +13,13 @@ type CreateSessionBody struct {
 	QuestionCount *int32    `json:"question_count"`
 }
 
+type JoinSessionBody struct {
+	JoinCode string `json:"code"`
+}
+
 type Session struct {
 	store.Session
 	// Schedule store.SessionSchedule `json:"schedule"
-}
-
-type EventType string
-
-const (
-	EventTypeSessionStarted EventType = "session:started"
-	EventTypeSessionEnded   EventType = "session:ended"
-)
-
-type SessionEvent struct {
-	Type EventType `json:"event_type"`
-	Data any       `json:"data,omitempty"`
 }
 
 func generateSessionCode(n int) (code string) {

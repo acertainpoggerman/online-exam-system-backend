@@ -7,19 +7,14 @@ import (
 	"github.com/acertainpoggerman/online-exam-system/internal/json"
 	"github.com/acertainpoggerman/online-exam-system/internal/jwt"
 	"github.com/google/uuid"
-	"github.com/gorilla/websocket"
 )
 
 type SessionHandler struct {
-	svc      SessionService
-	upgrader websocket.Upgrader
+	svc SessionService
 }
 
 func NewSessionHandler(svc SessionService) *SessionHandler {
-	return &SessionHandler{svc, websocket.Upgrader{
-		Subprotocols: []string{"base64.binary.oes"},
-		CheckOrigin:  func(r *http.Request) bool { return true },
-	}}
+	return &SessionHandler{svc}
 }
 
 func (h *SessionHandler) RegisterRoutes(r *http.ServeMux) {
@@ -32,49 +27,36 @@ func (h *SessionHandler) RegisterRoutes(r *http.ServeMux) {
 	r.HandleFunc("POST /sessions/{session_id}/close", h.closeSessionByID)
 	r.HandleFunc("POST /sessions/{session_id}/start", h.startSessionByID)
 	r.HandleFunc("POST /sessions/{session_id}/end", h.endSessionByID)
-}
 
-func (h *SessionHandler) RegisterWebsocketRoutes(r *http.ServeMux) {
-	// r.HandleFunc("/sessions/{session_id}", h.joinSessionByID)
+	r.HandleFunc("POST /sessions/join", h.joinSessionByCode)
 }
 
 // -----------------------------------------------------------------------
 // --- In-Session Related ------------------------------------------------
 // -----------------------------------------------------------------------
 
-// func (h *SessionHandler) joinSessionByID(w http.ResponseWriter, r *http.Request) {
+func (h *SessionHandler) joinSessionByCode(w http.ResponseWriter, r *http.Request) {
 
-// 	user, err := jwt.GetUserDataFromContext(r.Context())
-// 	if err != nil {
-// 		json.WriteJSON(w, http.StatusBadRequest, "Could not get user", nil)
-// 		return
-// 	}
+	user, err := jwt.GetUserDataFromContext(r.Context())
+	if err != nil {
+		json.WriteJSON(w, http.StatusBadRequest, "Could not get user", nil)
+		return
+	}
 
-// 	sessionID, err := uuid.Parse(r.PathValue("session_id"))
-// 	if err != nil {
-// 		json.WriteJSON(w, http.StatusBadRequest, "Invalid session ID", nil)
-// 		return
-// 	}
+	var body JoinSessionBody
+	if err := json.ReadRequestBody(r, &body); err != nil {
+		json.WriteJSON(w, http.StatusBadRequest, json.Wrapper{"error": err}, nil)
+		return
+	}
 
-// 	if _, err := h.svc.FindSessionByID(r.Context(), user, sessionID); err != nil {
-// 		json.WriteJSON(w, http.StatusInternalServerError, err.Error(), nil)
-// 		return
-// 	}
+	submission, err := h.svc.JoinSessionByCode(r.Context(), user, body.JoinCode)
+	if err != nil {
+		json.WriteJSON(w, http.StatusInternalServerError, json.Wrapper{"error": err}, nil)
+		return
+	}
 
-// 	// Websocket part of things
-
-// 	conn, err := h.upgrader.Upgrade(w, r, nil)
-// 	if err != nil {
-// 		json.WriteJSON(w, http.StatusInternalServerError, err.Error(), nil)
-// 		return
-// 	}
-// 	defer conn.Close()
-
-// 	if err := h.svc.JoinSessionByID(r.Context(), user, sessionID, conn); err != nil {
-// 		log.Printf("Error. Status Code: %d, Reason: %v", http.StatusInternalServerError, err)
-// 		return
-// 	}
-// }
+	json.WriteJSON(w, http.StatusOK, json.Wrapper{"submission": submission}, nil)
+}
 
 func (h *SessionHandler) openSessionByID(w http.ResponseWriter, r *http.Request) {
 

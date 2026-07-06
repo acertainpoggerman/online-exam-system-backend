@@ -13,14 +13,15 @@ INSERT INTO scripts (
 
 -- Updates the script if possible
 ---------------------------------
--- name: UpdateScriptFields :exec
+-- name: UpdateScriptFields :one
 
 UPDATE scripts SET
     title       = $2,
     heading     = $3,
     description = $4
 WHERE scripts.id = $1
-    AND scripts.locked = false;
+    AND scripts.locked = false
+RETURNING id;
 
 
 -- Deletes the script if possible

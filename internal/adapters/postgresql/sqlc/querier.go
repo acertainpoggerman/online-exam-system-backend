@@ -15,7 +15,7 @@ type Querier interface {
 	// CLOSED mode, examinees cannot join the session. Only
 	// sessions in OPEN mode can be closed.
 	//---------------------------------------------------------
-	CloseSession(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
+	CloseSession(ctx context.Context, id uuid.UUID) (Session, error)
 	CreateAnswerValue(ctx context.Context, arg CreateAnswerValueParams) error
 	CreateAnswerValues(ctx context.Context, arg []CreateAnswerValuesParams) (int64, error)
 	//---------------------------------------------------------------
@@ -30,7 +30,7 @@ type Querier interface {
 	//---------------------
 	CreateScript(ctx context.Context, arg CreateScriptParams) (Script, error)
 	CreateSession(ctx context.Context, arg CreateSessionParams) (uuid.UUID, error)
-	CreateSubmission(ctx context.Context, arg CreateSubmissionParams) (uuid.UUID, error)
+	CreateSubmission(ctx context.Context, arg CreateSubmissionParams) (Submission, error)
 	// Creates a new text question
 	//----------------------------
 	CreateTextQuestion(ctx context.Context, arg CreateTextQuestionParams) (uuid.UUID, error)
@@ -47,7 +47,8 @@ type Querier interface {
 	// Sets the session to ENDED mode. Only sessions in STARTED
 	// mode can be started.
 	//----------------------------------------------------------
-	EndSession(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
+	EndSession(ctx context.Context, id uuid.UUID) (Session, error)
+	FindActiveSubmissionForScript(ctx context.Context, arg FindActiveSubmissionForScriptParams) (Submission, error)
 	// Finds the answer key for a question as a list
 	//----------------------------------------------
 	FindAnswerKeyForQuestion(ctx context.Context, questionID uuid.UUID) ([]string, error)
@@ -103,6 +104,7 @@ type Querier interface {
 	//------------------------------------------------------------------------------
 	//------------------------------------------------------------------------------
 	FindSessionsForExaminer(ctx context.Context, creatorID uuid.UUID) ([]Session, error)
+	FindSubmissionByExamineeAndSession(ctx context.Context, arg FindSubmissionByExamineeAndSessionParams) (Submission, error)
 	FindSubmissionByID(ctx context.Context, id uuid.UUID) (Submission, error)
 	FindSubmissionsForExaminee(ctx context.Context, examineeID uuid.UUID) ([]Submission, error)
 	FindSubmissionsForSession(ctx context.Context, sessionID uuid.UUID) ([]Submission, error)
@@ -119,7 +121,7 @@ type Querier interface {
 	// examinees can join the session. Only sessions in
 	// CLOSED mode can be opened.
 	//--------------------------------------------------
-	OpenSession(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
+	OpenSession(ctx context.Context, id uuid.UUID) (Session, error)
 	//---------------------------------------------------------------
 	//- Answer Key --------------------------------------------------
 	//---------------------------------------------------------------
@@ -146,10 +148,13 @@ type Querier interface {
 	// with cursor pagination and a search query
 	//-------------------------------------------
 	SearchScriptsForExaminer(ctx context.Context, arg SearchScriptsForExaminerParams) ([]Script, error)
+	SetSubmissionsEditableForSession(ctx context.Context, sessionID uuid.UUID) error
 	// Sets the session to STARTED mode. Only sessions in OPEN
 	// mode can be started.
 	//----------------------------------------------------------
-	StartSession(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
+	StartSession(ctx context.Context, id uuid.UUID) (StartSessionRow, error)
+	SubmitSubmission(ctx context.Context, arg SubmitSubmissionParams) (Submission, error)
+	SubmitSubmissionsForSession(ctx context.Context, sessionID uuid.UUID) error
 	//---------------------------------------------------------------
 	//- Manipulating Questions --------------------------------------
 	//---------------------------------------------------------------
@@ -158,7 +163,7 @@ type Querier interface {
 	UpdateQuestionFields(ctx context.Context, arg UpdateQuestionFieldsParams) error
 	// Updates the script if possible
 	//-------------------------------
-	UpdateScriptFields(ctx context.Context, arg UpdateScriptFieldsParams) error
+	UpdateScriptFields(ctx context.Context, arg UpdateScriptFieldsParams) (uuid.UUID, error)
 	//------------------------------------------------------------------------------
 	//------------------------------------------------------------------------------
 	UpdateSessionFields(ctx context.Context, arg UpdateSessionFieldsParams) (Session, error)

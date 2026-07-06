@@ -20,7 +20,9 @@ WHERE sessions.id = $1 LIMIT 1;
 
 -- name: FindSessionByJoinCode :one
 SELECT * FROM sessions
-WHERE sessions.join_code ILIKE $1 LIMIT 1;
+WHERE sessions.join_code ILIKE $1
+    AND sessions.status = 'open'
+LIMIT 1;
 
 --------------------------------------------------------------------------------
 --------------------------------------------------------------------------------
@@ -56,7 +58,7 @@ UPDATE sessions SET
     status = 'open'
 WHERE sessions.id = $1
     AND sessions.status = 'closed'
-RETURNING id;
+RETURNING *;
 
 
 -- Puts the session in CLOSED mode (default mode). While in
@@ -69,7 +71,7 @@ UPDATE sessions SET
     status = 'closed'
 WHERE sessions.id = $1
     AND sessions.status = 'open'
-RETURNING id;
+RETURNING *;
 
 
 -- Sets the session to STARTED mode. Only sessions in OPEN
@@ -89,7 +91,7 @@ UPDATE scripts SET locked = true
 FROM updated_session
 WHERE scripts.id = updated_session.script_id
     AND scripts.locked != true
-RETURNING updated_session.id;
+RETURNING updated_session.*;
 
 
 -- Sets the session to ENDED mode. Only sessions in STARTED
@@ -102,7 +104,7 @@ UPDATE sessions SET
     ended_at    = now()
 WHERE sessions.id = $1
     AND sessions.status = 'started'
-RETURNING id;
+RETURNING *;
 
 --------------------------------------------------------------------------------
 --------------------------------------------------------------------------------

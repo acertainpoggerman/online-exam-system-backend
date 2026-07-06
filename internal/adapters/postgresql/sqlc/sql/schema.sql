@@ -225,7 +225,7 @@ CREATE TYPE submission_status AS ENUM (
 CREATE TABLE submissions (
     id      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     grade   INTEGER CHECK (grade >= 0),
-    status  submission_status NOT NULL DEFAULT 'editable',
+    status  submission_status NOT NULL DEFAULT 'joined',
 
     submitted_at    TIMESTAMPTZ,
     joined_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
