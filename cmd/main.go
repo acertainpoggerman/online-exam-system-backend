@@ -23,10 +23,10 @@ func main() {
 	ctx := context.Background()
 
 	jwtSecretKey := []byte("thisissecretkey")
-	jwtExpiryTime := 10 * time.Minute
+	jwtExpiryTime := 30 * time.Minute
 
 	// --------------------------------------------------------------------------
-	// --- Instantiating DB, Redis Client & store --------------------------
+	// --- Instantiating DB & Store ---------------------------------------------
 	// --------------------------------------------------------------------------
 
 	pool, err := pgxpool.New(ctx, "user=postgres password=mysecretpassword dbname=examdb")
