@@ -498,7 +498,7 @@ func (svc *scriptService) CreateQuestion(ctx context.Context, user store.User, s
 
 		for _, option := range subq.Options {
 			values = append(values, option.Value)
-			imgUrls = append(imgUrls, common.ZeroNilString(option.ImageUrl))
+			imgUrls = append(imgUrls, common.PtrToString(option.ImageUrl))
 		}
 
 		if err := qtx.ReplaceOptionsForQuestion(ctx, store.ReplaceOptionsForQuestionParams{
@@ -593,7 +593,7 @@ func (svc *scriptService) ReplaceQuestion(ctx context.Context, user store.User, 
 
 		for _, option := range subq.Options {
 			values = append(values, option.Value)
-			imgUrls = append(imgUrls, common.ZeroNilString(option.ImageUrl))
+			imgUrls = append(imgUrls, common.PtrToString(option.ImageUrl))
 		}
 
 		if err := qtx.ReplaceOptionsForQuestion(ctx, store.ReplaceOptionsForQuestionParams{
