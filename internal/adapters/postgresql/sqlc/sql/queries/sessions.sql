@@ -90,7 +90,6 @@ WITH updated_session AS (
 UPDATE scripts SET locked = true
 FROM updated_session
 WHERE scripts.id = updated_session.script_id
-    AND scripts.locked != true
 RETURNING updated_session.*;
 
 
