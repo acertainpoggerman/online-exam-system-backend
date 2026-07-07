@@ -104,7 +104,7 @@ const (
 	SubmissionStatusJoined    SubmissionStatus = "joined"
 	SubmissionStatusEditable  SubmissionStatus = "editable"
 	SubmissionStatusSubmitted SubmissionStatus = "submitted"
-	SubmissionStatusGraded    SubmissionStatus = "graded"
+	SubmissionStatusMarked    SubmissionStatus = "marked"
 )
 
 func (e *SubmissionStatus) Scan(src interface{}) error {
@@ -251,7 +251,7 @@ type Session struct {
 
 type Submission struct {
 	ID          uuid.UUID        `json:"id"`
-	Grade       *int32           `json:"grade"`
+	Mark        *int32           `json:"mark"`
 	Status      SubmissionStatus `json:"status"`
 	SubmittedAt *time.Time       `json:"submitted_at"`
 	JoinedAt    time.Time        `json:"joined_at"`
@@ -262,6 +262,7 @@ type Submission struct {
 type SubmissionQuestion struct {
 	SubmissionID uuid.UUID `json:"submission_id"`
 	QuestionID   uuid.UUID `json:"question_id"`
+	Mark         *int32    `json:"mark"`
 	CreatedAt    time.Time `json:"created_at"`
 }
 

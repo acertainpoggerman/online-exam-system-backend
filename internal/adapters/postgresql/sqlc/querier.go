@@ -11,6 +11,11 @@ import (
 )
 
 type Querier interface {
+	// Calculates the mark for a submission based on
+	// the individual marks for each question's answer.
+	//
+	//-------------------------------------------------
+	CalculateSubmisionMark(ctx context.Context, submissionID uuid.UUID) (int64, error)
 	// Puts the session in CLOSED mode (default mode). While in
 	// CLOSED mode, examinees cannot join the session. Only
 	// sessions in OPEN mode can be closed.
@@ -151,6 +156,11 @@ type Querier interface {
 	//
 	//--------------------------------------------------------------
 	SetQuestionsForSubmissions(ctx context.Context, sessionID uuid.UUID) error
+	// Updates the mark for an answer to a question in
+	// a submission. Can only update a submitted submission
+	//
+	//-----------------------------------------------------
+	SetSubmissionQuestionMark(ctx context.Context, arg SetSubmissionQuestionMarkParams) (SubmissionQuestion, error)
 	// Set submissions as editable. Intended to be used
 	// when the session has been started and the questions
 	// for each user's submission has been set
@@ -184,7 +194,6 @@ type Querier interface {
 	//------------------------------------------------------------------------------
 	//------------------------------------------------------------------------------
 	UpdateSessionFields(ctx context.Context, arg UpdateSessionFieldsParams) (Session, error)
-	UpdateSubmissionGrade(ctx context.Context, arg UpdateSubmissionGradeParams) error
 	// Insert text-question values unless there is conflict,
 	// in which case update the existing subquestion.
 	//
