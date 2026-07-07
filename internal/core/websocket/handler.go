@@ -27,7 +27,7 @@ func NewHandler(hub *Hub, jwtSecretKey []byte) *WebsocketHandler {
 }
 
 func (h *WebsocketHandler) RegisterRoutes(r *http.ServeMux) {
-	r.HandleFunc("/sessions/{session_id}/ws", h.HandleSessionConn)
+	r.HandleFunc("/sessions/{session_id}", h.HandleSessionConn)
 }
 
 //------------------------------------------------------------------------------------
