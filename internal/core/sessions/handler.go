@@ -23,12 +23,15 @@ func (h *SessionHandler) RegisterRoutes(r *http.ServeMux) {
 	r.HandleFunc("GET /sessions/{session_id}", h.getSessionByID)
 	r.HandleFunc("PUT /sessions/{session_id}", h.putSessionByID)
 
+	r.HandleFunc("POST /sessions/join", h.joinSessionByCode)
+
 	r.HandleFunc("POST /sessions/{session_id}/open", h.openSessionByID)
 	r.HandleFunc("POST /sessions/{session_id}/close", h.closeSessionByID)
 	r.HandleFunc("POST /sessions/{session_id}/start", h.startSessionByID)
 	r.HandleFunc("POST /sessions/{session_id}/end", h.endSessionByID)
 
-	r.HandleFunc("POST /sessions/join", h.joinSessionByCode)
+	r.HandleFunc("POST /sessions/{session_id}/mark", h.markSessionByID)
+
 }
 
 // -----------------------------------------------------------------------
@@ -135,6 +138,31 @@ func (h *SessionHandler) endSessionByID(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if err := h.svc.EndSession(r.Context(), user, sessionID); err != nil {
+		json.WriteJSON(w, http.StatusInternalServerError, err.Error(), nil)
+		return
+	}
+
+	json.WriteJSON(w, http.StatusNoContent, nil, nil)
+}
+
+// -----------------------------------------------------------------------
+// --- Post-Session Related ----------------------------------------------
+// -----------------------------------------------------------------------
+
+func (h *SessionHandler) markSessionByID(w http.ResponseWriter, r *http.Request) {
+
+	user, err := jwt.GetUserDataFromContext(r.Context())
+	if err != nil {
+		json.WriteJSON(w, http.StatusBadRequest, "Could not get user", nil)
+		return
+	}
+
+	sessionID, err := uuid.Parse(r.PathValue("session_id"))
+	if err != nil {
+		json.WriteJSON(w, http.StatusBadRequest, "Invalid session ID", nil)
+	}
+
+	if err := h.svc.MarkSubmissionsForSession(r.Context(), user, sessionID); err != nil {
 		json.WriteJSON(w, http.StatusInternalServerError, err.Error(), nil)
 		return
 	}
