@@ -96,18 +96,21 @@ func (svc *sessionService) StartSession(ctx context.Context, user store.User, se
 		return err
 	}
 
-	if err := qtx.SetSubmissionsEditableForSession(ctx, started.ID); err != nil {
+	if err := qtx.SetQuestionsForSubmissions(ctx, sessionID); err != nil {
 		return err
 	}
 
-	// ------------------------------------------------------------------------------------
-	// --- Broadcasting Start Event -------------------------------------------------------
+	if err := qtx.SetSubmissionsEditableForSession(ctx, sessionID); err != nil {
+		return err
+	}
+
+	// ---------------------------------------------------------------------
+	// --- Broadcasting Start Event ----------------------------------------
 
 	svc.hub.Broadcast(sessionID, websocket.Message{
 		Type: websocket.MessageTypeSessionStarted,
 		Data: json.Wrapper{
 			"session_id": sessionID,
-			"script_id":  session.ScriptID,
 			"started_at": started.StartedAt,
 		},
 	})
@@ -143,7 +146,7 @@ func (svc *sessionService) EndSession(ctx context.Context, user store.User, sess
 		return err
 	}
 
-	if err := qtx.SubmitSubmissionsForSession(ctx, sessionID); err != nil {
+	if err := qtx.SubmitAllSubmissionsForSession(ctx, sessionID); err != nil {
 		return err
 	}
 
@@ -151,7 +154,7 @@ func (svc *sessionService) EndSession(ctx context.Context, user store.User, sess
 	// --- Broadcasting End Event ---------------------------------------------------------
 
 	svc.hub.Broadcast(sessionID, websocket.Message{
-		Type: websocket.MessageTypeSessionStarted,
+		Type: websocket.MessageTypeSessionEnded,
 	})
 
 	return tx.Commit(ctx)
