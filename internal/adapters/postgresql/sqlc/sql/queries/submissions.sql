@@ -9,9 +9,39 @@ SELECT * FROM submissions WHERE submissions.session_id = $1;
 -- name: FindSubmissionByID :one
 SELECT * FROM submissions WHERE submissions.id = $1;
 
--- name: UpdateSubmissionGrade :exec
-UPDATE submissions SET grade = $2
-    WHERE submissions.id = $1;
+
+-- Updates the mark for an answer to a question in
+-- a submission. Can only update a submitted submission
+--
+-------------------------------------------------------
+-- name: SetSubmissionQuestionMark :one
+
+UPDATE submission_questions SET
+    mark = @mark::integer
+FROM submissions
+WHERE submission_questions.submission_id = $1
+    AND submission_questions.question_id = $2
+    AND submissions.id = submission_questions.submission_id
+    AND submissions.status = 'submitted'
+RETURNING submission_questions.*;
+
+
+-- Calculates the mark for a submission based on
+-- the individual marks for each question's answer.
+--
+---------------------------------------------------
+-- name: CalculateSubmisionMark :one
+
+WITH total AS (
+    SELECT sum(sq.mark) AS mark FROM submission_questions sq
+    WHERE sq.submission_id = @submission_id::uuid
+) UPDATE submissions SET
+    mark    = total.mark,
+    status  = 'marked'
+FROM total
+WHERE submissions.id = @submission_id::uuid
+    AND submissions.status = 'submitted'
+RETURNING total.mark;
 
 
 -- Set submissions as editable. Intended to be used
