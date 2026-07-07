@@ -81,7 +81,8 @@ func (svc *sessionService) StartSession(ctx context.Context, user store.User, se
 		return fmt.Errorf("User does not own resource")
 	}
 
-	// Updating session status
+	// ---------------------------------------------------------------------
+	// --- Updating session status -----------------------------------------
 
 	tx, err := svc.pool.Begin(ctx)
 	if err != nil {
@@ -300,7 +301,8 @@ func (svc *sessionService) UpdateSessionByID(ctx context.Context, user store.Use
 	defer tx.Rollback(ctx)
 	qtx := svc.q.WithTx(tx)
 
-	// Ensuring examiner owns the session
+	// -------------------------------------------------------------
+	// --- Ensuring examiner owns the session ----------------------
 
 	if session, err := qtx.FindSessionByID(ctx, sessionID); err != nil {
 		return Session{}, err
@@ -308,7 +310,8 @@ func (svc *sessionService) UpdateSessionByID(ctx context.Context, user store.Use
 		return Session{}, fmt.Errorf("Cannot modify resource")
 	}
 
-	// Modifying session details
+	// -------------------------------------------------------------
+	// --- Modifying session details -------------------------------
 
 	session, err := qtx.UpdateSessionFields(ctx, store.UpdateSessionFieldsParams{
 		ID:       sessionID,
