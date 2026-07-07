@@ -50,6 +50,9 @@ func main() {
 	unauthedRouter := http.NewServeMux()
 	router.Handle("/auth/", http.StripPrefix("/auth", unauthedRouter))
 
+	wsRouter := http.NewServeMux()
+	router.Handle("/ws/", http.StripPrefix("/ws", wsRouter))
+
 	authedRouter := http.NewServeMux()
 	router.Handle("/", middleware.JWTAuth(jwtSecretKey)(authedRouter))
 
@@ -71,7 +74,7 @@ func main() {
 
 	hub := websocket.NewHub()
 	wsHandler := websocket.NewHandler(hub, jwtSecretKey)
-	wsHandler.RegisterRoutes(unauthedRouter)
+	wsHandler.RegisterRoutes(wsRouter)
 
 	sessionService := sessions.NewSessionService(repo, pool, submissionService, hub)
 	sessionHandler := sessions.NewSessionHandler(sessionService)
