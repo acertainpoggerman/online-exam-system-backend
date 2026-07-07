@@ -1,5 +1,5 @@
-DROP TABLE IF EXISTS answers;
 DROP TABLE IF EXISTS answer_values;
+DROP TABLE IF EXISTS submission_questions CASCADE;
 DROP TABLE IF EXISTS submissions CASCADE;
 
 DROP TABLE IF EXISTS sessions CASCADE;

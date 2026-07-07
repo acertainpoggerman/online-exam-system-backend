@@ -246,7 +246,6 @@ WITH updated_session AS (
 UPDATE scripts SET locked = true
 FROM updated_session
 WHERE scripts.id = updated_session.script_id
-    AND scripts.locked != true
 RETURNING updated_session.id, updated_session.title, updated_session.status, updated_session.question_count, updated_session.started_at, updated_session.ended_at, updated_session.join_code, updated_session.creator_id, updated_session.script_id
 `
 

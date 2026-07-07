@@ -185,12 +185,6 @@ func (ns NullUserRole) Value() (driver.Value, error) {
 	return string(ns.UserRole), nil
 }
 
-type Answer struct {
-	SubmissionID uuid.UUID `json:"submission_id"`
-	QuestionID   uuid.UUID `json:"question_id"`
-	Grade        *int32    `json:"grade"`
-}
-
 type AnswerKey struct {
 	Value      string    `json:"value"`
 	QuestionID uuid.UUID `json:"-"`
@@ -263,6 +257,12 @@ type Submission struct {
 	JoinedAt    time.Time        `json:"joined_at"`
 	ExamineeID  uuid.UUID        `json:"examinee_id"`
 	SessionID   uuid.UUID        `json:"session_id"`
+}
+
+type SubmissionQuestion struct {
+	SubmissionID uuid.UUID `json:"submission_id"`
+	QuestionID   uuid.UUID `json:"question_id"`
+	CreatedAt    time.Time `json:"created_at"`
 }
 
 type TextQuestion struct {
