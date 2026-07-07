@@ -25,6 +25,8 @@ type SessionService interface {
 	CloseSession(ctx context.Context, user store.User, sessionID uuid.UUID) error
 	StartSession(ctx context.Context, user store.User, sessionID uuid.UUID) error
 	EndSession(ctx context.Context, user store.User, sessionID uuid.UUID) error
+
+	MarkSubmissionsForSession(ctx context.Context, user store.User, sessionID uuid.UUID) error
 }
 
 type ExtSessionService interface {
@@ -34,17 +36,17 @@ type ExtSessionService interface {
 type sessionService struct {
 	q    *store.Queries
 	pool *pgxpool.Pool
-	sub  submissions.ExtSubmissionService
 	hub  *websocket.Hub
+	sub  submissions.ExtSubmissionService
 }
 
 func NewSessionService(
 	q *store.Queries,
 	pool *pgxpool.Pool,
-	sub submissions.ExtSubmissionService,
 	hub *websocket.Hub,
+	sub submissions.ExtSubmissionService,
 ) *sessionService {
-	return &sessionService{q, pool, sub, hub}
+	return &sessionService{q, pool, hub, sub}
 }
 
 // ------------------------------------------------------------------------------------

@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"slices"
 
 	store "github.com/acertainpoggerman/online-exam-system/internal/adapters/postgresql/sqlc"
+	"github.com/acertainpoggerman/online-exam-system/internal/common"
 	"github.com/acertainpoggerman/online-exam-system/internal/core/scripts"
 	"github.com/acertainpoggerman/online-exam-system/internal/core/users"
 	"github.com/google/uuid"
@@ -20,23 +22,23 @@ type SubmissionService interface {
 
 type ExtSubmissionService interface {
 	CreateSubmission(ctx context.Context, user store.User, data CreateSubmissionBody) (Submission, error)
+	MarkSubmission(ctx context.Context, qtx *store.Queries, submissionID uuid.UUID) error
 }
 
 type submissionService struct {
-	q    *store.Queries
-	pool *pgxpool.Pool
-
-	script scripts.ExtScriptService
+	q      *store.Queries
+	pool   *pgxpool.Pool
 	user   users.ExtUserService
+	script scripts.ExtScriptService
 }
 
 func NewSubmissionService(
 	q *store.Queries,
 	pool *pgxpool.Pool,
-	script scripts.ExtScriptService,
 	user users.ExtUserService,
+	script scripts.ExtScriptService,
 ) *submissionService {
-	return &submissionService{q, pool, script, user}
+	return &submissionService{q, pool, user, script}
 }
 
 func (svc *submissionService) FindSubmissionByID(ctx context.Context, user store.User, submissionID uuid.UUID) (Submission, error) {

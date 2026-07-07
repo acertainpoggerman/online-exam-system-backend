@@ -68,7 +68,7 @@ func main() {
 	scriptHandler := scripts.NewScriptHandler(scriptService)
 	scriptHandler.RegisterRoutes(authedRouter)
 
-	submissionService := submissions.NewSubmissionService(repo, pool, scriptService, userService)
+	submissionService := submissions.NewSubmissionService(repo, pool, userService, scriptService)
 	submissionHandler := submissions.NewSubmissionHandler(submissionService)
 	submissionHandler.RegisterRoutes(authedRouter)
 
@@ -76,7 +76,7 @@ func main() {
 	wsHandler := websocket.NewHandler(hub, jwtSecretKey)
 	wsHandler.RegisterRoutes(wsRouter)
 
-	sessionService := sessions.NewSessionService(repo, pool, submissionService, hub)
+	sessionService := sessions.NewSessionService(repo, pool, hub, submissionService)
 	sessionHandler := sessions.NewSessionHandler(sessionService)
 	sessionHandler.RegisterRoutes(authedRouter)
 
