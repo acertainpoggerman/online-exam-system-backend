@@ -18,9 +18,9 @@ type Submission struct {
 }
 
 type Answer struct {
-	store.Answer
-	Question scripts.Question `json:"question,omitzero"`
-	Value    []string         `json:"value"`
+	QuestionID uuid.UUID        `json:"question_id,omitempty"`
+	Question   scripts.Question `json:"question,omitzero"`
+	Value      []string         `json:"value"`
 }
 
 type PatchSubmissionRequest struct {

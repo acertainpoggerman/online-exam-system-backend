@@ -5,6 +5,7 @@ import (
 
 	"github.com/acertainpoggerman/online-exam-system/internal/json"
 	"github.com/acertainpoggerman/online-exam-system/internal/jwt"
+	"github.com/google/uuid"
 )
 
 type SubmissionHandler struct {
@@ -16,15 +17,11 @@ func NewSubmissionHandler(svc SubmissionService) *SubmissionHandler {
 }
 
 func (h *SubmissionHandler) RegisterRoutes(r *http.ServeMux) {
-	r.HandleFunc("GET /submissions", h.getSubmissions)
-	// r.HandleFunc("GET /sessions/{session_id}/submissions", h.getSubmissionsForSession)
-
-	// r.HandleFunc("GET /submissions/{submission_id}", h.getSubmissionByID)
-	r.HandleFunc("POST /submissions", h.postSubmission)
-	// r.HandleFunc("PATCH /submissions/{submission_id}", h.patchSubmission)
+	r.HandleFunc("GET /submissions/{submission_id}", h.getSubmissionByID)
+	r.HandleFunc("PUT /submissions/{submission_id}/answers/{question_id}", h.putAnswerForQuestion)
 }
 
-func (h *SubmissionHandler) getSubmissions(w http.ResponseWriter, r *http.Request) {
+func (h *SubmissionHandler) getSubmissionByID(w http.ResponseWriter, r *http.Request) {
 
 	user, err := jwt.GetUserDataFromContext(r.Context())
 	if err != nil {
@@ -32,80 +29,51 @@ func (h *SubmissionHandler) getSubmissions(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	submissions, err := h.svc.FindSubmissions(r.Context(), user)
+	submissionID, err := uuid.Parse(r.PathValue("submission_id"))
 	if err != nil {
-		json.WriteJSON(w, http.StatusInternalServerError, json.Wrapper{"error": err.Error()}, nil)
+		json.WriteJSON(w, http.StatusBadRequest, json.Wrapper{"error": err}, nil)
 		return
 	}
 
-	json.WriteJSON(w, http.StatusOK, json.Wrapper{"submissions": submissions}, nil)
-}
-
-// func (h *SubmissionHandler) getSubmissionsForSession(w http.ResponseWriter, r *http.Request) {
-
-// 	user, err := jwt.GetUserDataFromContext(r.Context())
-// 	if err != nil {
-// 		json.WriteJSON(w, http.StatusBadRequest, "Could not get user", nil)
-// 		return
-// 	}
-
-// 	sessionID, err := uuid.Parse(r.PathValue("session_id"))
-// 	if err != nil {
-// 		json.WriteJSON(w, http.StatusBadRequest, "Invalid session ID passed", nil)
-// 		return
-// 	}
-
-// 	submissions, err := h.svc.FindSubmissionsForSession(r.Context(), user, sessionID)
-// 	if err != nil {
-// 		json.WriteJSON(w, http.StatusInternalServerError, json.Wrapper{"error": err.Error()}, nil)
-// 		return
-// 	}
-
-// 	json.WriteJSON(w, http.StatusOK, json.Wrapper{"submissions": submissions}, nil)
-// }
-
-// func (h *SubmissionHandler) getSubmissionByID(w http.ResponseWriter, r *http.Request) {
-
-// 	user, err := jwt.GetUserDataFromContext(r.Context())
-// 	if err != nil {
-// 		json.WriteJSON(w, http.StatusBadRequest, "Could not get user", nil)
-// 		return
-// 	}
-
-// 	submissionID, err := uuid.Parse(r.PathValue("submission_id"))
-// 	if err != nil {
-// 		json.WriteJSON(w, http.StatusBadRequest, "Invalid submission ID passed", nil)
-// 		return
-// 	}
-
-// 	submission, err := h.svc.FindSubmissionByID(r.Context(), user, submissionID)
-// 	if err != nil {
-// 		json.WriteJSON(w, http.StatusInternalServerError, json.Wrapper{"error": err.Error()}, nil)
-// 		return
-// 	}
-
-// 	json.WriteJSON(w, http.StatusOK, json.Wrapper{"submission": submission}, nil)
-// }
-
-func (h *SubmissionHandler) postSubmission(w http.ResponseWriter, r *http.Request) {
-
-	user, err := jwt.GetUserDataFromContext(r.Context())
-	if err != nil {
-		json.WriteJSON(w, http.StatusBadRequest, "Could not get user", nil)
-		return
-	}
-
-	var body CreateSubmissionBody
-	if err := json.ReadRequestBody(r, &body); err != nil {
-		json.WriteJSON(w, http.StatusBadRequest, err.Error(), nil)
-		return
-	}
-
-	id, err := h.svc.CreateSubmission(r.Context(), user, body)
+	submission, err := h.svc.FindSubmissionByID(r.Context(), user, submissionID)
 	if err != nil {
 		json.WriteJSON(w, http.StatusInternalServerError, err.Error(), nil)
 		return
 	}
 
-	json.WriteJSON(w, http.StatusCreated, json.Wrapper{"submission_id": id}, nil)
+	json.WriteJSON(w, http.StatusOK, submission, nil)
+}
+
+func (h *SubmissionHandler) putAnswerForQuestion(w http.ResponseWriter, r *http.Request) {
+
+	user, err := jwt.GetUserDataFromContext(r.Context())
+	if err != nil {
+		json.WriteJSON(w, http.StatusBadRequest, "Could not get user", nil)
+		return
+	}
+
+	var body Answer
+	if err := json.ReadRequestBody(r, &body); err != nil {
+		json.WriteJSON(w, http.StatusBadRequest, err.Error(), nil)
+		return
+	}
+
+	submissionID, err := uuid.Parse(r.PathValue("submission_id"))
+	if err != nil {
+		json.WriteJSON(w, http.StatusBadRequest, json.Wrapper{"error": err}, nil)
+		return
+	}
+
+	questionID, err := uuid.Parse(r.PathValue("question_id"))
+	if err != nil {
+		json.WriteJSON(w, http.StatusBadRequest, json.Wrapper{"error": err}, nil)
+		return
+	}
+
+	if err := h.svc.UpdateSubAnswerForQuestion(r.Context(), user, submissionID, questionID, body); err != nil {
+		json.WriteJSON(w, http.StatusInternalServerError, err.Error(), nil)
+		return
+	}
+
+	json.WriteJSON(w, http.StatusNoContent, nil, nil)
 }
