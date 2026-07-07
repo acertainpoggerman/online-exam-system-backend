@@ -169,10 +169,7 @@ func (svc *submissionService) isCorrectChoiceQuestion(isMultipleChoice bool, ans
 		return slices.Contains(answerKey, response[0]) // Will mark correct if answer matches a key
 	}
 
-	if common.EqualUnordered(answerKey, response) {
-		return true // Response matches answer key, mark correct
-	}
-	return false // Response did not match answer key, mark incorrect
+	return common.EqualUnordered(answerKey, response) // Will mark correct if answer fully matches the key
 }
 
 func (svc *submissionService) isCorrectTextQuestion(answerKey []string, response []string) bool {
