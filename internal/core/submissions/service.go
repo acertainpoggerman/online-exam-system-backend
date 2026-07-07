@@ -90,3 +90,97 @@ func (svc *submissionService) UpdateSubAnswerForQuestion(ctx context.Context, us
 		Value:        answer.Value,
 	})
 }
+
+func (svc *submissionService) MarkSubmission(ctx context.Context, qtx *store.Queries, submissionID uuid.UUID) error {
+
+	answers, err := qtx.FindSubmissionAnswers(ctx, submissionID)
+	if err != nil {
+		return err
+	}
+
+	for _, answer := range answers {
+		question, err := svc.script.FindQuestionByID(ctx, answer.QuestionID)
+		if err != nil {
+			return err
+		}
+
+		var mark int32
+		switch question.SubQuestion.(type) {
+
+		// ------------------------------------------------------
+
+		case *scripts.ChoiceQuestion:
+			subq := question.SubQuestion.(*scripts.ChoiceQuestion)
+			if svc.isCorrectChoiceQuestion(
+				subq.IsMultipleChoice,
+				question.AnswerKey,
+				answer.Value,
+			) {
+				mark = 1
+			}
+
+		// ------------------------------------------------------
+
+		case *scripts.TextQuestion:
+			if svc.isCorrectTextQuestion(
+				question.AnswerKey,
+				answer.Value,
+			) {
+				mark = 1
+			}
+
+		// ------------------------------------------------------
+
+		default:
+			return fmt.Errorf("Invalid subquestion type: \"%T\"", question.SubQuestion)
+		}
+
+		if _, err := qtx.SetSubmissionQuestionMark(ctx, store.SetSubmissionQuestionMarkParams{
+			SubmissionID: submissionID,
+			QuestionID:   answer.QuestionID,
+			Mark:         mark,
+		}); err != nil {
+			return err
+		}
+	}
+
+	if _, err := qtx.CalculateSubmisionMark(ctx, submissionID); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (svc *submissionService) isCorrectChoiceQuestion(isMultipleChoice bool, answerKey []string, response []string) bool {
+
+	if len(answerKey) == 0 {
+		return true // Signal questions without answer keys as correct for now
+	}
+	if len(response) < 1 {
+		return false // No answer given, mark incorrect
+	}
+
+	if isMultipleChoice {
+		if len(response) != 1 {
+			return false // Multiple answers given for a mcq, mark incorrect
+		}
+		return slices.Contains(answerKey, response[0]) // Will mark correct if answer matches a key
+	}
+
+	if common.EqualUnordered(answerKey, response) {
+		return true // Response matches answer key, mark correct
+	}
+	return false // Response did not match answer key, mark incorrect
+}
+
+func (svc *submissionService) isCorrectTextQuestion(answerKey []string, response []string) bool {
+
+	if len(answerKey) == 0 {
+		return true // Signal questions without answer keys as correct for now
+	}
+	if len(response) != 1 {
+		return false // Incorrect count of answers given (should be 1), mark incorrect
+	}
+
+	return slices.Contains(answerKey, response[0]) // Will mark correct if answer matches a key
+}

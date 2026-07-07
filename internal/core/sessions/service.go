@@ -222,6 +222,49 @@ func (svc *sessionService) CloseSession(ctx context.Context, user store.User, se
 }
 
 // ------------------------------------------------------------------------------------
+// --- Marking Services ---------------------------------------------------------------
+// ------------------------------------------------------------------------------------
+
+func (svc *sessionService) MarkSubmissionsForSession(ctx context.Context, user store.User, sessionID uuid.UUID) error {
+
+	if user.Role != store.UserRoleExaminer {
+		return fmt.Errorf("User role: \"%s\" not allowed", user.Role)
+	}
+
+	tx, err := svc.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	qtx := svc.q.WithTx(tx)
+
+	// ----------------------------------------------------------------------------------------
+	// --- Ensuring User (as Examiner) owns the Script ----------------------------------------
+
+	if session, err := qtx.FindSessionByID(ctx, sessionID); err != nil {
+		return err
+	} else if user.ID != session.CreatorID {
+		return fmt.Errorf("Cannot modify resource")
+	}
+
+	// ----------------------------------------------------------------------------------------
+	// --- Marking Submissions -----------------------------------------------------------------
+
+	submissions, err := qtx.FindSubmissionsForSession(ctx, sessionID)
+	if err != nil {
+		return err
+	}
+
+	for _, submission := range submissions {
+		if err := svc.sub.MarkSubmission(ctx, qtx, submission.ID); err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit(ctx)
+}
+
+// ------------------------------------------------------------------------------------
 // --- CRUD Session Services ----------------------------------------------------------
 // ------------------------------------------------------------------------------------
 
