@@ -63,7 +63,9 @@ BEFORE UPDATE ON scripts
 FOR EACH ROW
 EXECUTE FUNCTION set_last_modified_at();
 
---- QUESTIONS ------------------------------------------------------------------
+-----------------------------------------------
+--- QUESTIONS ---------------------------------
+-----------------------------------------------
 
 CREATE TYPE question_type AS ENUM (
     'choice',
@@ -85,7 +87,7 @@ CREATE TABLE questions (
 CREATE INDEX idx_questions_created_at ON questions(created_at ASC);
 
 -- Answer keys just represent a list of values
--- for a question that could be the answer.
+-- for a question that can be marked as the answer.
 
 CREATE TABLE answer_keys (
     value       TEXT NOT NULL CHECK (value <> ''),
@@ -235,18 +237,33 @@ CREATE TABLE submissions (
     UNIQUE (examinee_id, session_id)
 );
 
---                      [ AnswerValue
---                      [ AnswerValue
--- Answer ------------- [ AnswerValue
--- -> grade: INT        [ AnswerValue
---                      [ AnswerValue
+-- A submission question is an insurance that any answer added is
+-- actually valid i.e. the script attached to the session for the
+-- submission actually has the question being answered.
+--
+-- The foreign key constraint ensures that once the questions have
+-- been preset for a submission, answers attached will always be for
+-- that question.
+--
+-- Getting the answer for a question can skip over the intermediary
+-- object as it is nothing more than a constraint for now
+--------------------------------------------------------------------
+--                                  | AnswerValue
+--                                  | AnswerValue
+-- SubmissionQuestion --------------| AnswerValue
+-- -> created_at: INT               | AnswerValue
+--                                  | AnswerValue
 
-CREATE TABLE answers (
+CREATE TABLE submission_questions (
     submission_id   UUID NOT NULL REFERENCES submissions(id) ON DELETE CASCADE,
     question_id     UUID NOT NULL REFERENCES questions(id) ON DELETE CASCADE,
-    grade           INTEGER CHECK (grade >= 0),
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+
     PRIMARY KEY (submission_id, question_id)
 );
+
+CREATE INDEX idx_sq_created_at ON submission_questions(created_at ASC);
 
 CREATE TABLE answer_values (
     value           TEXT NOT NULL,
@@ -255,7 +272,7 @@ CREATE TABLE answer_values (
 
     PRIMARY KEY (submission_id, question_id, value),
     FOREIGN KEY (submission_id, question_id)
-        REFERENCES answers(submission_id, question_id) ON DELETE CASCADE
+        REFERENCES submission_questions(submission_id, question_id)
 );
 
 --------------------------------------------------------------------------------
