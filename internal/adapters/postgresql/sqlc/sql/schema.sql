@@ -221,12 +221,12 @@ CREATE TYPE submission_status AS ENUM (
     'joined',
     'editable',
     'submitted',
-    'graded'
+    'marked'
 );
 
 CREATE TABLE submissions (
     id      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    grade   INTEGER CHECK (grade >= 0),
+    mark    INTEGER CHECK (mark >= 0),
     status  submission_status NOT NULL DEFAULT 'joined',
 
     submitted_at    TIMESTAMPTZ,
@@ -245,20 +245,20 @@ CREATE TABLE submissions (
 -- been preset for a submission, answers attached will always be for
 -- that question.
 --
--- Getting the answer for a question can skip over the intermediary
--- object as it is nothing more than a constraint for now
 --------------------------------------------------------------------
---                                  | AnswerValue
---                                  | AnswerValue
+--
 -- SubmissionQuestion --------------| AnswerValue
--- -> created_at: INT               | AnswerValue
+-- -> created_at: TZ                | AnswerValue
+-- -> mark: INTEGER                 | AnswerValue
+--                                  | AnswerValue
 --                                  | AnswerValue
 
 CREATE TABLE submission_questions (
     submission_id   UUID NOT NULL REFERENCES submissions(id) ON DELETE CASCADE,
     question_id     UUID NOT NULL REFERENCES questions(id) ON DELETE CASCADE,
 
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    mark        INTEGER CHECK (mark >= 0),
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
 
     PRIMARY KEY (submission_id, question_id)
 );
