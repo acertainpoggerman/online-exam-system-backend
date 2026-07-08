@@ -27,14 +27,14 @@ func NewHandler(hub *Hub, jwtSecretKey []byte) *WebsocketHandler {
 }
 
 func (h *WebsocketHandler) RegisterRoutes(r *http.ServeMux) {
-	r.HandleFunc("/sessions/{session_id}", h.HandleSessionConn)
+	r.HandleFunc("/sessions/{session_id}", h.HandleSessionConnect)
 }
 
 //------------------------------------------------------------------------------------
 // --- Routes ------------------------------------------------------------------------
 //------------------------------------------------------------------------------------
 
-func (h *WebsocketHandler) HandleSessionConn(w http.ResponseWriter, r *http.Request) {
+func (h *WebsocketHandler) HandleSessionConnect(w http.ResponseWriter, r *http.Request) {
 
 	token := r.URL.Query().Get("token")
 	if token == "" {
