@@ -107,12 +107,11 @@ func (svc *submissionService) MarkSubmission(ctx context.Context, qtx *store.Que
 		}
 
 		var mark int32
-		switch question.SubQuestion.(type) {
+		switch subq := question.SubQuestion.(type) {
 
 		// ------------------------------------------------------
 
 		case *scripts.ChoiceQuestion:
-			subq := question.SubQuestion.(*scripts.ChoiceQuestion)
 			if svc.isCorrectChoiceQuestion(
 				subq.IsMultipleChoice,
 				question.AnswerKey,

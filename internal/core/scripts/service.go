@@ -477,12 +477,11 @@ func (svc *scriptService) CreateQuestion(ctx context.Context, user store.User, s
 
 	var questionID uuid.UUID
 
-	switch question.SubQuestion.(type) {
+	switch subq := question.SubQuestion.(type) {
 
 	// ---------------------------------------------------------
 
 	case *ChoiceQuestion:
-		subq := question.SubQuestion.(*ChoiceQuestion)
 		questionID, err = qtx.CreateChoiceQuestion(ctx, store.CreateChoiceQuestionParams{
 			ScriptID:         scriptID,
 			Text:             question.Text,
@@ -512,7 +511,6 @@ func (svc *scriptService) CreateQuestion(ctx context.Context, user store.User, s
 	// ---------------------------------------------------------
 
 	case *TextQuestion:
-		subq := question.SubQuestion.(*TextQuestion)
 		questionID, err = qtx.CreateTextQuestion(ctx, store.CreateTextQuestionParams{
 			ScriptID:    scriptID,
 			Text:        question.Text,
@@ -575,12 +573,11 @@ func (svc *scriptService) ReplaceQuestion(ctx context.Context, user store.User, 
 	// ----------------------------------------------------------------------------------------
 	// --- Add New Question Sub-type Details --------------------------------------------------
 
-	switch question.SubQuestion.(type) {
+	switch subq := question.SubQuestion.(type) {
 
 	// ---------------------------------------------------------
 
 	case *ChoiceQuestion:
-		subq := question.SubQuestion.(*ChoiceQuestion)
 		if err = qtx.UpsertChoiceQuestion(ctx, store.UpsertChoiceQuestionParams{
 			ID:               questionID,
 			IsMultipleChoice: subq.IsMultipleChoice,
@@ -607,7 +604,6 @@ func (svc *scriptService) ReplaceQuestion(ctx context.Context, user store.User, 
 	// ---------------------------------------------------------
 
 	case *TextQuestion:
-		subq := question.SubQuestion.(*TextQuestion)
 		if err = qtx.UpsertTextQuestion(ctx, store.UpsertTextQuestionParams{
 			ID:          questionID,
 			IsShortText: subq.IsShortText,
