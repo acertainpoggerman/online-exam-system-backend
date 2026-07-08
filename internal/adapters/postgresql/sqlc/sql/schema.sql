@@ -233,7 +233,7 @@ CREATE TABLE submissions (
     joined_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
     examinee_id UUID REFERENCES examinees(id) ON DELETE CASCADE NOT NULL,
-    session_id UUID REFERENCES sessions(id) ON DELETE CASCADE NOT NULL,
+    session_id  UUID REFERENCES sessions(id) ON DELETE CASCADE NOT NULL,
     UNIQUE (examinee_id, session_id)
 );
 

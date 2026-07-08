@@ -292,6 +292,7 @@ UPDATE submissions SET
     submitted_at    = now()
 WHERE submissions.examinee_id = $1
     AND submissions.session_id = $2
+    AND submissions.status != 'submitted'
 RETURNING id, mark, status, submitted_at, joined_at, examinee_id, session_id
 `
 
