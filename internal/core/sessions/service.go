@@ -2,13 +2,16 @@ package sessions
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log"
 
 	store "github.com/acertainpoggerman/online-exam-system/internal/adapters/postgresql/sqlc"
 	"github.com/acertainpoggerman/online-exam-system/internal/common"
 	"github.com/acertainpoggerman/online-exam-system/internal/core/submissions"
 	"github.com/acertainpoggerman/online-exam-system/internal/json"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -24,6 +27,10 @@ type SessionService interface {
 	CloseSession(ctx context.Context, user store.User, sessionID uuid.UUID) error
 	StartSession(ctx context.Context, user store.User, sessionID uuid.UUID) error
 	EndSession(ctx context.Context, user store.User, sessionID uuid.UUID) error
+
+	ExamineeInSession(ctx context.Context, user store.User, sessionID uuid.UUID) (bool, error)
+	OnGraceExpired(userID, sessionID uuid.UUID)
+	SendStateSync(ctx context.Context, userID, sessionID uuid.UUID) error
 
 	MarkSubmissionsForSession(ctx context.Context, user store.User, sessionID uuid.UUID) error
 }
@@ -229,6 +236,69 @@ func (svc *sessionService) CloseSession(ctx context.Context, user store.User, se
 	}
 
 	return tx.Commit(ctx)
+}
+
+// ------------------------------------------
+// --- WS Related ---------------------------
+// ------------------------------------------
+
+func (svc *sessionService) ExamineeInSession(ctx context.Context, user store.User, sessionID uuid.UUID) (bool, error) {
+
+	if user.Role != store.UserRoleExaminee {
+		return false, nil
+	}
+
+	if _, err := svc.q.FindActiveSubmissionInSession(ctx, store.FindActiveSubmissionInSessionParams{
+		SessionID:  sessionID,
+		ExamineeID: user.ID,
+	}); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) { // Row not found
+			return false, nil
+		}
+		return false, err // DB Failure
+	}
+
+	return true, nil
+}
+
+func (svc *sessionService) OnGraceExpired(userID, sessionID uuid.UUID) {
+
+	ctx := context.Background()
+
+	session, err := svc.q.FindSessionByID(ctx, sessionID)
+	if err != nil {
+		return
+	}
+
+	if session.Status != store.SessionStatusStarted {
+		log.Printf(
+			"Session:(%s) failed to reconnect. Session has not been started, no issue",
+			sessionID,
+		)
+		return
+	}
+
+	log.Printf(
+		"Session:(%s) failed to reconnect. Does not submit script for now",
+		sessionID,
+	)
+}
+
+func (svc *sessionService) SendStateSync(ctx context.Context, userID, sessionID uuid.UUID) error {
+
+	session, err := svc.q.FindSessionByID(ctx, sessionID)
+	if err != nil {
+		return err
+	}
+
+	svc.hub.SendToUser(userID, sessionID, Message{
+		Type: MessageTypeSessionStateSync,
+		Data: json.Wrapper{
+			"status": session.Status,
+		},
+	})
+
+	return nil
 }
 
 // ------------------------------------------------------------------------------------
