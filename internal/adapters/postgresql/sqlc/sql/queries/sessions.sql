@@ -7,8 +7,7 @@ INSERT INTO sessions (
     join_code
 ) VALUES ($1, $2, $3, $4) RETURNING id;
 
---------------------------------------------------------------------------------
---------------------------------------------------------------------------------
+
 
 -- name: FindSessionsForExaminer :many
 SELECT * FROM sessions
@@ -24,10 +23,11 @@ WHERE sessions.join_code ILIKE $1
     AND sessions.status = 'open'
 LIMIT 1;
 
---------------------------------------------------------------------------------
---------------------------------------------------------------------------------
 
+-- Updates the top level fields of the sessions
+--
 -- name: UpdateSessionFields :one
+
 UPDATE sessions SET
     title       = $2,
     script_id   = $3
@@ -35,23 +35,30 @@ WHERE sessions.id = $1
     AND sessions.status IN ('open', 'closed')
 RETURNING *;
 
+-- Deletes a session only if it is CLOSED
+--
 -- name: DeleteSessionByID :exec
+
 DELETE FROM sessions
 WHERE sessions.status = 'closed'
     AND sessions.id = $1;
 
---------------------------------------------------------------------------------
---- Changing Session Status ----------------------------------------------------
---------------------------------------------------------------------------------
 
--------------------------------------------------------------------------
--- State machine :: (Start) : CLOSED <-> OPEN -> STARTED -> ENDED : (End)
--------------------------------------------------------------------------
+-- Returns the submission ID if it's found
+-- and is still in an active state (JOINED or EDITABLE)
+--
+-- name: FindActiveSubmissionInSession :one
+
+SELECT submissions.id FROM submissions
+WHERE submissions.session_id = $1
+    AND submissions.examinee_id = $2
+    AND submissions.status IN ('joined', 'editable');
+
 
 -- Puts the session in OPEN mode. While in OPEN mode
 -- examinees can join the session. Only sessions in
 -- CLOSED mode can be opened.
-----------------------------------------------------
+--
 -- name: OpenSession :one
 
 UPDATE sessions SET
@@ -64,7 +71,7 @@ RETURNING *;
 -- Puts the session in CLOSED mode (default mode). While in
 -- CLOSED mode, examinees cannot join the session. Only
 -- sessions in OPEN mode can be closed.
------------------------------------------------------------
+--
 -- name: CloseSession :one
 
 UPDATE sessions SET
@@ -76,7 +83,7 @@ RETURNING *;
 
 -- Sets the session to STARTED mode. Only sessions in OPEN
 -- mode can be started.
-------------------------------------------------------------
+--
 -- name: StartSession :one
 
 WITH updated_session AS (
@@ -95,7 +102,7 @@ RETURNING updated_session.*;
 
 -- Sets the session to ENDED mode. Only sessions in STARTED
 -- mode can be started.
-------------------------------------------------------------
+--
 -- name: EndSession :one
 
 UPDATE sessions SET
@@ -106,4 +113,11 @@ WHERE sessions.id = $1
 RETURNING *;
 
 --------------------------------------------------------------------------------
+--- Changing Session Status ----------------------------------------------------
 --------------------------------------------------------------------------------
+
+-- The state machine below for switching session statuses
+
+-------------------------------------------------------------------------
+-- State machine :: (Start) : CLOSED <-> OPEN -> STARTED -> ENDED : (End)
+-------------------------------------------------------------------------

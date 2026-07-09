@@ -19,7 +19,7 @@ type Querier interface {
 	// Puts the session in CLOSED mode (default mode). While in
 	// CLOSED mode, examinees cannot join the session. Only
 	// sessions in OPEN mode can be closed.
-	//---------------------------------------------------------
+	//
 	CloseSession(ctx context.Context, id uuid.UUID) (Session, error)
 	// Creates a new choice question
 	//
@@ -47,11 +47,17 @@ type Querier interface {
 	//
 	//-------------------------------
 	DeleteScript(ctx context.Context, id uuid.UUID) error
+	// Deletes a session only if it is CLOSED
+	//
 	DeleteSessionByID(ctx context.Context, id uuid.UUID) error
 	// Sets the session to ENDED mode. Only sessions in STARTED
 	// mode can be started.
-	//----------------------------------------------------------
+	//
 	EndSession(ctx context.Context, id uuid.UUID) (Session, error)
+	// Returns the submission ID if it's found
+	// and is still in an active state (JOINED or EDITABLE)
+	//
+	FindActiveSubmissionInSession(ctx context.Context, arg FindActiveSubmissionInSessionParams) (uuid.UUID, error)
 	// Finds the answer key for a question as a list
 	//
 	//----------------------------------------------
@@ -101,8 +107,6 @@ type Querier interface {
 	FindScriptsForExaminer(ctx context.Context, arg FindScriptsForExaminerParams) ([]Script, error)
 	FindSessionByID(ctx context.Context, id uuid.UUID) (Session, error)
 	FindSessionByJoinCode(ctx context.Context, joinCode string) (Session, error)
-	//------------------------------------------------------------------------------
-	//------------------------------------------------------------------------------
 	FindSessionsForExaminer(ctx context.Context, creatorID uuid.UUID) ([]Session, error)
 	// Gets the answers for a submission
 	//
@@ -113,16 +117,10 @@ type Querier interface {
 	FindTextQuestionByID(ctx context.Context, id uuid.UUID) (TextQuestion, error)
 	FindUserByEmail(ctx context.Context, email string) (User, error)
 	FindUserByID(ctx context.Context, id uuid.UUID) (User, error)
-	//------------------------------------------------------------------------------
-	//- Changing Session Status ----------------------------------------------------
-	//------------------------------------------------------------------------------
-	//-----------------------------------------------------------------------
-	// State machine :: (Start) : CLOSED <-> OPEN -> STARTED -> ENDED : (End)
-	//-----------------------------------------------------------------------
 	// Puts the session in OPEN mode. While in OPEN mode
 	// examinees can join the session. Only sessions in
 	// CLOSED mode can be opened.
-	//--------------------------------------------------
+	//
 	OpenSession(ctx context.Context, id uuid.UUID) (Session, error)
 	// Fully replace all answer key values for the
 	// question with the given ID
@@ -169,7 +167,7 @@ type Querier interface {
 	SetSubmissionsEditableForSession(ctx context.Context, sessionID uuid.UUID) error
 	// Sets the session to STARTED mode. Only sessions in OPEN
 	// mode can be started.
-	//----------------------------------------------------------
+	//
 	StartSession(ctx context.Context, id uuid.UUID) (StartSessionRow, error)
 	// Submits submission for a given session. Intended to be
 	// used by the server to auto lock examinee submissions
@@ -191,8 +189,8 @@ type Querier interface {
 	//
 	//-------------------------------
 	UpdateScriptFields(ctx context.Context, arg UpdateScriptFieldsParams) (uuid.UUID, error)
-	//------------------------------------------------------------------------------
-	//------------------------------------------------------------------------------
+	// Updates the top level fields of the sessions
+	//
 	UpdateSessionFields(ctx context.Context, arg UpdateSessionFieldsParams) (Session, error)
 	// Insert text-question values unless there is conflict,
 	// in which case update the existing subquestion.
