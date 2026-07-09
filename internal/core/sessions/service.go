@@ -105,18 +105,22 @@ func (svc *sessionService) StartSession(ctx context.Context, user store.User, se
 		return err
 	}
 
+	if err := tx.Commit(ctx); err != nil {
+		return err
+	}
+
 	// ---------------------------------------------------------------------
 	// --- Broadcasting Start Event ----------------------------------------
 
-	svc.hub.Broadcast(sessionID, websocket.Message{
-		Type: websocket.MessageTypeSessionStarted,
+	svc.hub.Broadcast(sessionID, Message{
+		Type: MessageTypeSessionStarted,
 		Data: json.Wrapper{
 			"session_id": sessionID,
 			"started_at": started.StartedAt,
 		},
 	})
 
-	return tx.Commit(ctx)
+	return nil
 }
 
 func (svc *sessionService) EndSession(ctx context.Context, user store.User, sessionID uuid.UUID) error {
@@ -151,14 +155,19 @@ func (svc *sessionService) EndSession(ctx context.Context, user store.User, sess
 		return err
 	}
 
+	if err := tx.Commit(ctx); err != nil {
+		return err
+	}
+
 	// ------------------------------------------------------------------------------------
 	// --- Broadcasting End Event ---------------------------------------------------------
 
-	svc.hub.Broadcast(sessionID, websocket.Message{
-		Type: websocket.MessageTypeSessionEnded,
+	svc.hub.Broadcast(sessionID, Message{
+		Type: MessageTypeSessionEnded,
 	})
+	svc.hub.CloseSession(sessionID)
 
-	return tx.Commit(ctx)
+	return nil
 }
 
 func (svc *sessionService) OpenSession(ctx context.Context, user store.User, sessionID uuid.UUID) error {
