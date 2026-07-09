@@ -7,7 +7,6 @@ import (
 	store "github.com/acertainpoggerman/online-exam-system/internal/adapters/postgresql/sqlc"
 	"github.com/acertainpoggerman/online-exam-system/internal/common"
 	"github.com/acertainpoggerman/online-exam-system/internal/core/submissions"
-	"github.com/acertainpoggerman/online-exam-system/internal/core/websocket"
 	"github.com/acertainpoggerman/online-exam-system/internal/json"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -36,14 +35,14 @@ type ExtSessionService interface {
 type sessionService struct {
 	q    *store.Queries
 	pool *pgxpool.Pool
-	hub  *websocket.Hub
+	hub  *Hub
 	sub  submissions.ExtSubmissionService
 }
 
 func NewSessionService(
 	q *store.Queries,
 	pool *pgxpool.Pool,
-	hub *websocket.Hub,
+	hub *Hub,
 	sub submissions.ExtSubmissionService,
 ) *sessionService {
 	return &sessionService{q, pool, hub, sub}
