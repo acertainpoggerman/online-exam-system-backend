@@ -12,7 +12,6 @@ import (
 	"github.com/acertainpoggerman/online-exam-system/internal/core/sessions"
 	"github.com/acertainpoggerman/online-exam-system/internal/core/submissions"
 	"github.com/acertainpoggerman/online-exam-system/internal/core/users"
-	"github.com/acertainpoggerman/online-exam-system/internal/core/websocket"
 	"github.com/acertainpoggerman/online-exam-system/internal/middleware"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -72,13 +71,14 @@ func main() {
 	submissionHandler := submissions.NewSubmissionHandler(submissionService)
 	submissionHandler.RegisterRoutes(authedRouter)
 
-	hub := websocket.NewHub()
-	wsHandler := websocket.NewHandler(hub, jwtSecretKey)
-	wsHandler.RegisterRoutes(wsRouter)
+	hub := sessions.NewHub()
 
 	sessionService := sessions.NewSessionService(repo, pool, hub, submissionService)
 	sessionHandler := sessions.NewSessionHandler(sessionService)
 	sessionHandler.RegisterRoutes(authedRouter)
+
+	wsHandler := sessions.NewWebsocketHandler(sessionService, hub, jwtSecretKey)
+	wsHandler.RegisterRoutes(wsRouter)
 
 	// --------------------------------------------------------------------------
 	// --- Defining and Running Server ------------------------------------------
