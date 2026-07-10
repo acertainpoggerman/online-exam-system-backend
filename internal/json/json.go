@@ -2,7 +2,6 @@ package json
 
 import (
 	"encoding/json"
-	"io"
 	"net/http"
 )
 
@@ -39,13 +38,9 @@ func ReadRequestBody(r *http.Request, out any) error {
 	return decoder.Decode(out)
 }
 
-// Pass reference of out ( i.e. ReadRequestBody(r, &out) )
-func ReadJSON(in io.Reader, out any) error {
-
-	decoder := json.NewDecoder(in)
-	decoder.DisallowUnknownFields()
-
-	return decoder.Decode(out)
+// Pass reference of out ( i.e. Unmarshal(data, &out) )
+func Unmarshal(data []byte, out any) error {
+	return json.Unmarshal(data, out)
 }
 
 func Marshal(data any) ([]byte, error) {
