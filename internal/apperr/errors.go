@@ -1,4 +1,4 @@
-package svcerrors
+package apperr
 
 type FieldError struct {
 	Field   string `json:"field"`
