@@ -3,10 +3,11 @@ package sessions
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log"
+	"time"
 
 	store "github.com/acertainpoggerman/online-exam-system/internal/adapters/postgresql/sqlc"
+	"github.com/acertainpoggerman/online-exam-system/internal/apperr"
 	"github.com/acertainpoggerman/online-exam-system/internal/common"
 	"github.com/acertainpoggerman/online-exam-system/internal/core/submissions"
 	"github.com/acertainpoggerman/online-exam-system/internal/json"
@@ -21,16 +22,25 @@ type SessionService interface {
 	FindSessions(ctx context.Context, user store.User) ([]Session, error)
 	UpdateSessionByID(ctx context.Context, user store.User, sessionID uuid.UUID, data CreateSessionBody) (Session, error)
 
-	JoinSessionByCode(ctx context.Context, user store.User, joinCode string) (submissions.Submission, error)
+	EnrolWithCode(ctx context.Context, user store.User, joinCode string) (submissions.Submission, error)
+	SubmitForSession(ctx context.Context, user store.User, sessionID uuid.UUID) error
 
 	OpenSession(ctx context.Context, user store.User, sessionID uuid.UUID) error
 	CloseSession(ctx context.Context, user store.User, sessionID uuid.UUID) error
 	StartSession(ctx context.Context, user store.User, sessionID uuid.UUID) error
 	EndSession(ctx context.Context, user store.User, sessionID uuid.UUID) error
 
-	ExamineeInSession(ctx context.Context, user store.User, sessionID uuid.UUID) (bool, error)
-	OnGraceExpired(userID, sessionID uuid.UUID)
+	ReadmitExaminee(ctx context.Context, user store.User, sessionID uuid.UUID, examineeID uuid.UUID) error
+	UnflagExaminee(ctx context.Context, user store.User, sessionID uuid.UUID, examineeID uuid.UUID) error
+
+	ExamineeCanConnect(ctx context.Context, user store.User, sessionID uuid.UUID) (bool, error)
+	OnExamineeConnect(ctx context.Context, user store.User, sessionID uuid.UUID) error
+	OnExamineeDisconnect(ctx context.Context, user store.User, sessionID uuid.UUID) error
+	FindSubmissionStatus(ctx context.Context, user store.User, sessionID uuid.UUID) (store.SubmissionStatus, error)
+
+	OnGraceExpired(ctx context.Context, userID, sessionID uuid.UUID) error
 	SendStateSync(ctx context.Context, userID, sessionID uuid.UUID) error
+	HandleProctorEvent(ctx context.Context, user store.User, event ProctorEvent) error
 
 	MarkSubmissionsForSession(ctx context.Context, user store.User, sessionID uuid.UUID) error
 }
@@ -59,10 +69,10 @@ func NewSessionService(
 // --- Session Participation Services -------------------------------------------------
 // ------------------------------------------------------------------------------------
 
-func (svc *sessionService) JoinSessionByCode(ctx context.Context, user store.User, joinCode string) (submissions.Submission, error) {
+func (svc *sessionService) EnrolWithCode(ctx context.Context, user store.User, joinCode string) (submissions.Submission, error) {
 
-	if user.Role != store.UserRoleExaminee {
-		return submissions.Submission{}, fmt.Errorf("Role not allowed: %s", user.Role)
+	if err := common.RequireRole(user, store.UserRoleExaminee); err != nil {
+		return submissions.Submission{}, err
 	}
 
 	session, err := svc.q.FindSessionByJoinCode(ctx, joinCode)
@@ -75,18 +85,41 @@ func (svc *sessionService) JoinSessionByCode(ctx context.Context, user store.Use
 	})
 }
 
-func (svc *sessionService) StartSession(ctx context.Context, user store.User, sessionID uuid.UUID) error {
+func (svc *sessionService) SubmitForSession(ctx context.Context, user store.User, sessionID uuid.UUID) error {
 
-	if user.Role != store.UserRoleExaminer {
-		return fmt.Errorf("Role not allowed: %s", user.Role)
-	}
-
-	session, err := svc.q.FindSessionByID(ctx, sessionID)
-	if err != nil {
+	if err := common.RequireRole(user, store.UserRoleExaminee); err != nil {
 		return err
 	}
-	if session.CreatorID != user.ID {
-		return fmt.Errorf("User does not own resource")
+
+	if _, err := svc.q.SetSubmissionSubmitted(ctx, store.SetSubmissionSubmittedParams{
+		SessionID:  sessionID,
+		ExamineeID: user.ID,
+	}); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return apperr.ErrNotFound
+		}
+		log.Printf("Error SubmitSubmission: %v", err)
+		return apperr.ErrInternal
+	}
+
+	svc.hub.RemoveMember(user.ID, sessionID)
+
+	return nil
+}
+
+// ------------------------------------------
+// ------------------------------------------
+
+func (svc *sessionService) StartSession(ctx context.Context, user store.User, sessionID uuid.UUID) error {
+
+	if err := common.RequireRole(user, store.UserRoleExaminer); err != nil {
+		return err
+	}
+
+	if session, err := svc.q.FindSessionByID(ctx, sessionID); err != nil {
+		return err
+	} else if err := common.RequireOwner(user, session.CreatorID); err != nil {
+		return err
 	}
 
 	// ---------------------------------------------------------------------
@@ -108,7 +141,7 @@ func (svc *sessionService) StartSession(ctx context.Context, user store.User, se
 		return err
 	}
 
-	if err := qtx.SetSubmissionsEditableForSession(ctx, sessionID); err != nil {
+	if _, err := qtx.SetSubmissionStatusesForStartedSession(ctx, sessionID); err != nil {
 		return err
 	}
 
@@ -132,16 +165,14 @@ func (svc *sessionService) StartSession(ctx context.Context, user store.User, se
 
 func (svc *sessionService) EndSession(ctx context.Context, user store.User, sessionID uuid.UUID) error {
 
-	if user.Role != store.UserRoleExaminer {
-		return fmt.Errorf("Role not allowed: %s", user.Role)
-	}
-
-	session, err := svc.q.FindSessionByID(ctx, sessionID)
-	if err != nil {
+	if err := common.RequireRole(user, store.UserRoleExaminer); err != nil {
 		return err
 	}
-	if session.CreatorID != user.ID {
-		return fmt.Errorf("User does not own resource")
+
+	if session, err := svc.q.FindSessionByID(ctx, sessionID); err != nil {
+		return err
+	} else if err := common.RequireOwner(user, session.CreatorID); err != nil {
+		return err
 	}
 
 	// ------------------------------------------------------------------------------------
@@ -158,7 +189,7 @@ func (svc *sessionService) EndSession(ctx context.Context, user store.User, sess
 		return err
 	}
 
-	if err := qtx.SubmitAllSubmissionsForSession(ctx, sessionID); err != nil {
+	if _, err := qtx.SubmitAllSubmissionsForSession(ctx, sessionID); err != nil {
 		return err
 	}
 
@@ -172,23 +203,21 @@ func (svc *sessionService) EndSession(ctx context.Context, user store.User, sess
 	svc.hub.Broadcast(sessionID, Message{
 		Type: MessageTypeSessionEnded,
 	})
-	svc.hub.CloseSession(sessionID)
+	svc.hub.PurgeSession(sessionID)
 
 	return nil
 }
 
 func (svc *sessionService) OpenSession(ctx context.Context, user store.User, sessionID uuid.UUID) error {
 
-	if user.Role != store.UserRoleExaminer {
-		return fmt.Errorf("Role not allowed: %s", user.Role)
-	}
-
-	session, err := svc.q.FindSessionByID(ctx, sessionID)
-	if err != nil {
+	if err := common.RequireRole(user, store.UserRoleExaminer); err != nil {
 		return err
 	}
-	if session.CreatorID != user.ID {
-		return fmt.Errorf("User does not own resource")
+
+	if session, err := svc.q.FindSessionByID(ctx, sessionID); err != nil {
+		return err
+	} else if err := common.RequireOwner(user, session.CreatorID); err != nil {
+		return err
 	}
 
 	// ------------------------------------------------------------------------------------
@@ -210,16 +239,14 @@ func (svc *sessionService) OpenSession(ctx context.Context, user store.User, ses
 
 func (svc *sessionService) CloseSession(ctx context.Context, user store.User, sessionID uuid.UUID) error {
 
-	if user.Role != store.UserRoleExaminer {
-		return fmt.Errorf("Role not allowed: %s", user.Role)
-	}
-
-	session, err := svc.q.FindSessionByID(ctx, sessionID)
-	if err != nil {
+	if err := common.RequireRole(user, store.UserRoleExaminer); err != nil {
 		return err
 	}
-	if session.CreatorID != user.ID {
-		return fmt.Errorf("User does not own resource")
+
+	if session, err := svc.q.FindSessionByID(ctx, sessionID); err != nil {
+		return err
+	} else if err := common.RequireOwner(user, session.CreatorID); err != nil {
+		return err
 	}
 
 	// Updating session status
@@ -239,16 +266,132 @@ func (svc *sessionService) CloseSession(ctx context.Context, user store.User, se
 }
 
 // ------------------------------------------
+// --- Sub Status (Examiner Deps) -----------
+// ------------------------------------------
+
+func (svc *sessionService) ReadmitExaminee(ctx context.Context, user store.User, sessionID uuid.UUID, examineeID uuid.UUID) error {
+
+	if err := common.RequireRole(user, store.UserRoleExaminer); err != nil {
+		return err
+	}
+
+	if session, err := svc.q.FindSessionByID(ctx, sessionID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return apperr.ErrNotFound
+		}
+		log.Printf("Error in ReadmitExaminee: %v", err)
+		return apperr.ErrInternal
+
+	} else if err := common.RequireOwner(user, session.CreatorID); err != nil {
+		return err
+
+	} else if err := common.RequireSessionHasStatus(
+		session.Status,
+		store.SessionStatusStarted,
+	); err != nil {
+		return err
+	}
+
+	if _, err := svc.q.SetSubmissionDisconnectedFromLeft(
+		ctx, store.SetSubmissionDisconnectedFromLeftParams{
+			SessionID:  sessionID,
+			ExamineeID: examineeID,
+		},
+	); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return apperr.ErrNotFound
+		}
+		log.Printf("Error in ReadmitExaminee: %v", err)
+		return apperr.ErrInternal
+	}
+
+	return nil
+}
+
+func (svc *sessionService) UnflagExaminee(ctx context.Context, user store.User, sessionID uuid.UUID, examineeID uuid.UUID) error {
+
+	if err := common.RequireRole(user, store.UserRoleExaminer); err != nil {
+		return err
+	}
+
+	if session, err := svc.q.FindSessionByID(ctx, sessionID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			log.Printf("Error in UnflagExaminee: could not find session (%v)\n", err)
+			return apperr.ErrNotFound
+		}
+		log.Printf("Error in UnflagExaminee: %v\n", err)
+		return apperr.ErrInternal
+	} else if err := common.RequireOwner(user, session.CreatorID); err != nil {
+		return err
+	}
+
+	// Needs to know the client state in the session's hub to make
+	// decisions.
+	//
+	// - ConnStateConnected		: (Flagged -> Editable)
+	// - ConnStateDisconnected 	: (Flagged -> Disconnected)
+	// - ConnStateNone 			: (Flagged -> Disconnected)
+
+	examineeState := svc.hub.GetMemberConnState(examineeID, sessionID)
+
+	switch examineeState {
+	// -----------------------------------------------------------
+	case ConnStateConnected:
+		if _, err := svc.q.SetSubmissionEditableFromFlagged(
+			ctx, store.SetSubmissionEditableFromFlaggedParams{
+				SessionID:  sessionID,
+				ExamineeID: examineeID,
+			},
+		); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				log.Printf("Error in UnflagExaminee: could not set as editable (%v)\n", err)
+				return apperr.ErrNotFound
+			}
+			log.Printf("Error in UnflagExaminee: %v\n", err)
+			return apperr.ErrInternal
+		}
+	// -----------------------------------------------------------
+	default:
+		if _, err := svc.q.SetSubmissionDisconnectedFromFlagged(
+			ctx, store.SetSubmissionDisconnectedFromFlaggedParams{
+				SessionID:  sessionID,
+				ExamineeID: examineeID,
+			},
+		); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				log.Printf("Error in UnflagExaminee: could not set as editable (%v)\n", err)
+				return apperr.ErrNotFound
+			}
+			log.Printf("Error in UnflagExaminee: %v\n", err)
+			return apperr.ErrInternal
+		}
+	}
+
+	svc.hub.SendToUser(sessionID, examineeID, Message{
+		Type: MessageTypeSessionUnflagged,
+	})
+
+	return nil
+}
+
+// ------------------------------------------
 // --- WS Related ---------------------------
 // ------------------------------------------
 
-func (svc *sessionService) ExamineeInSession(ctx context.Context, user store.User, sessionID uuid.UUID) (bool, error) {
+func (svc *sessionService) FindSubmissionStatus(ctx context.Context, user store.User, sessionID uuid.UUID) (store.SubmissionStatus, error) {
+	return svc.q.FindSubmissionStatus(ctx, store.FindSubmissionStatusParams{
+		SessionID:  sessionID,
+		ExamineeID: user.ID,
+	})
+}
 
-	if user.Role != store.UserRoleExaminee {
+func (svc *sessionService) ExamineeCanConnect(ctx context.Context, user store.User, sessionID uuid.UUID) (bool, error) {
+
+	if err := common.RequireRole(user, store.UserRoleExaminee); err != nil {
 		return false, nil
 	}
 
-	if _, err := svc.q.FindActiveSubmissionInSession(ctx, store.FindActiveSubmissionInSessionParams{
+	if _, err := svc.q.FindConnectableSubmission(ctx, store.FindConnectableSubmissionParams{
 		SessionID:  sessionID,
 		ExamineeID: user.ID,
 	}); err != nil {
@@ -261,27 +404,97 @@ func (svc *sessionService) ExamineeInSession(ctx context.Context, user store.Use
 	return true, nil
 }
 
-func (svc *sessionService) OnGraceExpired(userID, sessionID uuid.UUID) {
+func (svc *sessionService) OnExamineeConnect(ctx context.Context, user store.User, sessionID uuid.UUID) error {
 
-	ctx := context.Background()
+	if err := common.RequireRole(user, store.UserRoleExaminee); err != nil {
+		return err
+	}
+
+	if _, err := svc.q.SetSubmissionOnConnect(ctx, store.SetSubmissionOnConnectParams{
+		SessionID:  sessionID,
+		ExamineeID: user.ID,
+	}); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (svc *sessionService) OnExamineeDisconnect(ctx context.Context, user store.User, sessionID uuid.UUID) error {
+
+	if err := common.RequireRole(user, store.UserRoleExaminee); err != nil {
+		return err
+	}
+
+	if _, err := svc.q.SetSubmissionOnDisconnect(ctx, store.SetSubmissionOnDisconnectParams{
+		SessionID:  sessionID,
+		ExamineeID: user.ID,
+	}); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		return err
+	}
+
+	return nil
+}
+
+// ------------------------------------------
+// ------------------------------------------
+
+func (svc *sessionService) OnGraceExpired(ctx context.Context, userID, sessionID uuid.UUID) error {
 
 	session, err := svc.q.FindSessionByID(ctx, sessionID)
 	if err != nil {
-		return
+		return err
 	}
 
 	if session.Status != store.SessionStatusStarted {
 		log.Printf(
-			"Session:(%s) failed to reconnect. Session has not been started, no issue",
+			"Session:(%s) grace period expired for User:(%s). Session has not been started, no issue",
 			sessionID,
+			userID,
 		)
-		return
+		return nil
 	}
 
+	if _, err := svc.q.LogProctorEvent(ctx, store.LogProctorEventParams{
+		SessionID:  sessionID,
+		ExamineeID: userID,
+		Type:       "EXTENDED_DISCONNECT",
+		OccurredAt: time.Now(),
+	}); err != nil {
+		return err
+	}
+
+	// Only flag the user if in a disconnected state
+	if _, err := svc.q.SetSubmissionFlaggedFromDisconnect(
+		ctx,
+		store.SetSubmissionFlaggedFromDisconnectParams{
+			SessionID:  sessionID,
+			ExamineeID: userID,
+		},
+	); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		return err
+	}
+
+	// Send flagged event to specific client
+	svc.hub.SendToUser(sessionID, userID, Message{
+		Type: MessageTypeSessionFlagged,
+	})
+
+	svc.hub.RemoveMember(userID, sessionID)
+
 	log.Printf(
-		"Session:(%s) failed to reconnect. Does not submit script for now",
+		"Session:(%s), User:(%s) failed to reconnect. Flagged script",
 		sessionID,
+		userID,
 	)
+
+	return nil
 }
 
 func (svc *sessionService) SendStateSync(ctx context.Context, userID, sessionID uuid.UUID) error {
@@ -291,11 +504,57 @@ func (svc *sessionService) SendStateSync(ctx context.Context, userID, sessionID 
 		return err
 	}
 
-	svc.hub.SendToUser(userID, sessionID, Message{
+	svc.hub.SendToUser(sessionID, userID, Message{
 		Type: MessageTypeSessionStateSync,
 		Data: json.Wrapper{
 			"status": session.Status,
 		},
+	})
+
+	return nil
+}
+
+func (svc *sessionService) HandleProctorEvent(ctx context.Context, user store.User, event ProctorEvent) error {
+
+	if err := common.RequireOwner(user, event.ExamineeID); err != nil {
+		return err
+	}
+
+	// tx, err := svc.pool.Begin(ctx)
+	// if err != nil {
+	// 	return err
+	// }
+	// defer tx.Rollback(ctx)
+	// qtx := svc.q.WithTx(tx)
+
+	if _, err := svc.q.LogProctorEvent(ctx, store.LogProctorEventParams{
+		SessionID:  event.SessionID,
+		ExamineeID: event.ExamineeID,
+		Type:       event.Type,
+		OccurredAt: event.OccurredAt,
+	}); err != nil {
+		return err
+	}
+
+	// For now just flag every event type
+
+	if _, err := svc.q.SetSubmissionFlaggedFromEditable(ctx, store.SetSubmissionFlaggedFromEditableParams{
+		SessionID:  event.SessionID,
+		ExamineeID: event.ExamineeID,
+	}); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			log.Printf("Session:(%s) Apparently not editable, check DB", event.SessionID)
+			return nil
+		}
+		return err
+	}
+
+	// if err := tx.Commit(ctx); err != nil {
+	// 	return err
+	// }
+
+	svc.hub.SendToUser(event.SessionID, event.ExamineeID, Message{
+		Type: MessageTypeSessionFlagged,
 	})
 
 	return nil
@@ -307,8 +566,8 @@ func (svc *sessionService) SendStateSync(ctx context.Context, userID, sessionID 
 
 func (svc *sessionService) MarkSubmissionsForSession(ctx context.Context, user store.User, sessionID uuid.UUID) error {
 
-	if user.Role != store.UserRoleExaminer {
-		return fmt.Errorf("User role: \"%s\" not allowed", user.Role)
+	if err := common.RequireRole(user, store.UserRoleExaminer); err != nil {
+		return err
 	}
 
 	tx, err := svc.pool.Begin(ctx)
@@ -323,8 +582,8 @@ func (svc *sessionService) MarkSubmissionsForSession(ctx context.Context, user s
 
 	if session, err := qtx.FindSessionByID(ctx, sessionID); err != nil {
 		return err
-	} else if user.ID != session.CreatorID {
-		return fmt.Errorf("Cannot modify resource")
+	} else if err := common.RequireOwner(user, session.CreatorID); err != nil {
+		return err
 	}
 
 	// ----------------------------------------------------------------------------------------
@@ -350,8 +609,8 @@ func (svc *sessionService) MarkSubmissionsForSession(ctx context.Context, user s
 
 func (svc *sessionService) CreateSession(ctx context.Context, user store.User, data CreateSessionBody) (string, error) {
 
-	if user.Role != store.UserRoleExaminer {
-		return "", fmt.Errorf("Cannot access resource as: %s", user.Role)
+	if err := common.RequireRole(user, store.UserRoleExaminer); err != nil {
+		return "", err
 	}
 
 	tx, err := svc.pool.Begin(ctx)
@@ -376,8 +635,8 @@ func (svc *sessionService) CreateSession(ctx context.Context, user store.User, d
 
 func (svc *sessionService) FindSessions(ctx context.Context, user store.User) ([]Session, error) {
 
-	if user.Role != store.UserRoleExaminer {
-		return []Session{}, fmt.Errorf("Cannot access resource as: %s", user.Role)
+	if err := common.RequireRole(user, store.UserRoleExaminer); err != nil {
+		return []Session{}, err
 	}
 
 	tx, err := svc.pool.Begin(ctx)
@@ -416,8 +675,8 @@ func (svc *sessionService) FindSessionByID(ctx context.Context, user store.User,
 
 func (svc *sessionService) UpdateSessionByID(ctx context.Context, user store.User, sessionID uuid.UUID, data CreateSessionBody) (Session, error) {
 
-	if user.Role != store.UserRoleExaminer {
-		return Session{}, fmt.Errorf("Cannot access resource as: %s", user.Role)
+	if err := common.RequireRole(user, store.UserRoleExaminer); err != nil {
+		return Session{}, err
 	}
 
 	tx, err := svc.pool.Begin(ctx)
@@ -432,8 +691,8 @@ func (svc *sessionService) UpdateSessionByID(ctx context.Context, user store.Use
 
 	if session, err := qtx.FindSessionByID(ctx, sessionID); err != nil {
 		return Session{}, err
-	} else if session.CreatorID != user.ID {
-		return Session{}, fmt.Errorf("Cannot modify resource")
+	} else if err := common.RequireOwner(user, session.CreatorID); err != nil {
+		return Session{}, err
 	}
 
 	// -------------------------------------------------------------

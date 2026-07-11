@@ -1,6 +1,7 @@
 package sessions
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"time"
@@ -35,7 +36,9 @@ func NewWebsocketHandler(
 }
 
 // Register under unauthenticated route, Authentication will be
-// handled inside the route itself.
+// handled inside the route itself. Routes include:
+//
+// - /sessions/{session_id}?token
 func (h *WebsocketHandler) RegisterRoutes(r *http.ServeMux) {
 	r.HandleFunc("/sessions/{session_id}", h.HandleSessionConnect)
 }
@@ -64,6 +67,10 @@ func (h *WebsocketHandler) HandleSessionConnect(w http.ResponseWriter, r *http.R
 		return
 	}
 
+	// -------------------------------------------------------------
+	// --- Access Guards -------------------------------------------
+	// -------------------------------------------------------------
+
 	session, err := h.svc.FindSessionByID(r.Context(), user, sessionID)
 	if err != nil {
 		json.WriteJSON(w, http.StatusNotFound, "Session not found", nil)
@@ -75,15 +82,19 @@ func (h *WebsocketHandler) HandleSessionConnect(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	inSession, err := h.svc.ExamineeInSession(r.Context(), user, sessionID)
+	canConnect, err := h.svc.ExamineeCanConnect(r.Context(), user, sessionID)
 	if err != nil {
-		json.WriteJSON(w, http.StatusInternalServerError, "Failed to verify enrollment", nil)
+		json.WriteJSON(w, http.StatusInternalServerError, "Cannot verify examinee state", nil)
 		return
 	}
-	if !inSession {
-		json.WriteJSON(w, http.StatusForbidden, "Not enrolled in this session", nil)
+	if !canConnect {
+		json.WriteJSON(w, http.StatusForbidden, "Cannot connect to session", nil)
 		return
 	}
+
+	// -------------------------------------------------------------
+	// --- Upgrading to Websocket Connection -----------------------
+	// -------------------------------------------------------------
 
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -97,10 +108,45 @@ func (h *WebsocketHandler) HandleSessionConnect(w http.ResponseWriter, r *http.R
 		userID:    user.ID,
 	}
 
+	// Attempt to set the client's disconnection state
+	// then unregister the client from the Hub.
+
+	defer func() {
+
+		ctx := context.Background() // Request ctx is dead by now
+
+		if err := h.svc.OnExamineeDisconnect(ctx, user, sessionID); err != nil {
+			log.Printf(
+				"OnExamineeDisconnect sessionID:(%s) examineeID:(%s): %v",
+				sessionID, user.ID, err,
+			)
+		}
+
+		var onGraceExpired func()
+		if status, err := h.svc.FindSubmissionStatus(
+			ctx, user, sessionID,
+		); err == nil && status == store.SubmissionStatusDisconnected {
+			onGraceExpired = func() {
+				if err := h.svc.OnGraceExpired(ctx, user.ID, client.sessionID); err != nil {
+					log.Printf(
+						"OnGraceExpired sessionID:(%s) examineeID:(%s): %v",
+						sessionID, user.ID, err,
+					)
+				}
+			}
+		}
+
+		h.hub.Unregister(client, onGraceExpired)
+	}()
+
+	// Set the client's submission status and then register
+	// the client into the Hub
+
+	if err := h.svc.OnExamineeConnect(r.Context(), user, sessionID); err != nil {
+		conn.Close()
+		return
+	}
 	wasReconnect, disconnectedFor := h.hub.Register(client)
-	defer h.hub.Unregister(client, func() {
-		h.svc.OnGraceExpired(user.ID, client.sessionID)
-	})
 
 	if wasReconnect {
 		log.Printf(
@@ -108,11 +154,12 @@ func (h *WebsocketHandler) HandleSessionConnect(w http.ResponseWriter, r *http.R
 			client.sessionID,
 			disconnectedFor.Seconds(),
 		)
+
 		h.svc.SendStateSync(r.Context(), client.userID, client.sessionID)
 	}
 
-	go writePump(client)
-	readPump(client)
+	go h.writePump(client)
+	h.readPump(r.Context(), user, client)
 }
 
 //------------------------------------------------------------------------------------
@@ -127,7 +174,7 @@ func (h *WebsocketHandler) HandleSessionConnect(w http.ResponseWriter, r *http.R
 // Also waits for a message to write to the connection, closes
 // connection if channel has been closed, else writes the message
 // to the connection.
-func writePump(client *Client) {
+func (h *WebsocketHandler) writePump(client *Client) {
 
 	defer client.conn.Close()
 	pinger := time.Tick(15 * time.Second) // For continuous pinging
@@ -170,7 +217,7 @@ func writePump(client *Client) {
 // responds to a ping to the connection.
 //
 // conn.ReadMessage will handling proctor events.
-func readPump(client *Client) {
+func (h *WebsocketHandler) readPump(ctx context.Context, user store.User, client *Client) {
 
 	defer client.conn.Close()
 
@@ -186,8 +233,60 @@ func readPump(client *Client) {
 	})
 
 	for {
-		if _, _, err := client.conn.ReadMessage(); err != nil {
+		_, data, err := client.conn.ReadMessage()
+		if err != nil {
 			break
+		}
+
+		log.Printf(
+			"Session:(%s) Receieved data from client (%s)\n",
+			client.sessionID,
+			client.userID,
+		)
+
+		var msg Message
+		if err := json.Unmarshal(data, &msg); err != nil {
+			log.Printf("Failed to process message\n")
+			continue // Just ignore it and continue
+		}
+
+		payload, err := json.Marshal(msg.Data)
+		if err != nil {
+			log.Printf("Failed to process message data\n")
+			continue // Just ignore it and continue
+		}
+
+		switch msg.Type {
+		case MessageTypeProctorEvent:
+			log.Printf(
+				"Session:(%s) Proctor message received from client (%s), type: %s\n",
+				client.sessionID,
+				client.userID,
+				msg.Type,
+			)
+
+			var event ProctorEvent
+			if err := json.Unmarshal(payload, &event); err != nil {
+				log.Printf(
+					"Session:(%s) Failed to process proctor event received from client (%s)\n",
+					client.sessionID,
+					client.userID,
+				)
+				continue
+			}
+
+			event.SessionID = client.sessionID
+			event.ExamineeID = client.userID
+
+			if err := h.svc.HandleProctorEvent(ctx, user, event); err != nil {
+				log.Printf(
+					"Session:(%s) Failed to handle proctor event received from client (%s)\n",
+					client.sessionID,
+					client.userID,
+				)
+				continue
+			}
+
 		}
 	}
 

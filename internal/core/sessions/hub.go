@@ -5,6 +5,7 @@ import (
 	"sync"
 	"time"
 
+	store "github.com/acertainpoggerman/online-exam-system/internal/adapters/postgresql/sqlc"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 )
@@ -12,15 +13,39 @@ import (
 type MessageType string
 
 const (
-	MessageTypeSessionStarted   MessageType = "session:started"
-	MessageTypeSessionEnded     MessageType = "session:ended"
-	MessageTypeSessionStateSync MessageType = "session:state_sync" // Add for distinguishing between OPEN and STARTED state
+	// Event indicates that the session has started
+	MessageTypeSessionStarted MessageType = "session:started"
+
+	// Event indicates that the session has ended
+	MessageTypeSessionEnded MessageType = "session:ended"
+
+	// Event sent to a user who is reconnnecting to the session.
+	// useful for signalling that the session is in a STARTED state if
+	// the user left while the session was in OPEN state
+	MessageTypeSessionStateSync MessageType = "session:state_sync"
+
+	// Event for signalling the user (examinee) has been flagged
+	// (could be for extended disconnections or cheating)
+	MessageTypeSessionFlagged MessageType = "session:flagged"
+
+	// Event for signalling the user (examinee) has been allowed
+	// by the examiner to continue their examiner after being flagged
+	MessageTypeSessionUnflagged MessageType = "session:unflagged"
+
+	// Event from clients signaling unusual behaviour and actions
+	MessageTypeProctorEvent MessageType = "session:proctor_event"
 )
 
 type Message struct {
 	Type MessageType `json:"event_type"`
 	Data any         `json:"data,omitempty"`
 }
+
+type ProctorEvent struct{ store.ProctorEvent }
+
+// ---------------------------------------------------------------
+// --- ClientSet -------------------------------------------------
+// ---------------------------------------------------------------
 
 // Logically represents Set(*Client), where Set() is a HashSet
 // (every element can be accessed at O(1) time)
@@ -38,19 +63,35 @@ func (set ClientSet) RemoveClient(c *Client) {
 	delete(set, c)
 }
 
+// ---------------------------------------------------------------
+// --- ConnectionState -------------------------------------------
+// ---------------------------------------------------------------
+
 // Represents the state of a user's connection in a session
 type ConnState string
 
 const (
+	ConnStateNone         ConnState = "none"
 	ConnStateConnected    ConnState = "connected"
 	ConnStateDisconnected ConnState = "disconnected"
 )
+
+// ---------------------------------------------------------------
+// --- Client ----------------------------------------------------
+// ---------------------------------------------------------------
 
 type Client struct {
 	conn      *websocket.Conn
 	send      chan Message
 	sessionID uuid.UUID
 	userID    uuid.UUID
+	closeSend sync.Once
+}
+
+// Shuts down the client's send channel. Only does it
+// once no matter how many times it is called
+func (c *Client) shutdownSend() {
+	c.closeSend.Do(func() { close(c.send) })
 }
 
 // For tracking user states in sessions (examiners). Useful
@@ -63,10 +104,27 @@ type MemberState struct {
 	graceTimer     *time.Timer
 }
 
+// Takes a User ID & Session ID, converting it to 'userID:sessionID'
 func memberKey(userID, sessionID uuid.UUID) string {
 	return userID.String() + ":" + sessionID.String()
 }
 
+// ---------------------------------------------------------------
+// --- Hub -------------------------------------------------------
+// ---------------------------------------------------------------
+
+// Hub represents a websocket mapping of session rooms and clients connected to each room.
+// The hub can be used to:
+//
+// - Register & unregister client connections
+//
+// - Broadcast messages to all or specific groups of clients (by roles)
+//
+// - Send messages to specific clients
+//
+// The hub also tracks every client's connection state for tracking
+// client connection states & for fault tolerance against disconnection
+// of clients
 type Hub struct {
 	mu      sync.RWMutex
 	clients map[uuid.UUID]ClientSet // sessionID 		-> Set(*Client) (Basically rooms)
@@ -90,7 +148,7 @@ func (h *Hub) Register(client *Client) (wasReconnect bool, disconnectedFor time.
 	// Evict existing clients with the same userID
 	for existing := range h.clients[client.sessionID] {
 		if existing.userID == client.userID {
-			close(existing.send)
+			existing.shutdownSend()
 			h.clients[client.sessionID].RemoveClient(existing)
 		}
 	}
@@ -169,13 +227,15 @@ func (h *Hub) Unregister(client *Client, onGraceExpired func()) {
 	member.connState = ConnStateDisconnected
 	member.disconnectedAt = &now
 
-	h.mu.Unlock() // release before AfterFunc to avoid holding lock in timer
-
 	// Will run onGraceExpired if the client does not call Register()
 	// after the grace period.
 
 	gracePeriod := 40 * time.Second
-	member.graceTimer = time.AfterFunc(gracePeriod, onGraceExpired)
+	if onGraceExpired != nil {
+		member.graceTimer = time.AfterFunc(gracePeriod, onGraceExpired)
+	}
+
+	h.mu.Unlock()
 }
 
 // Broadcast message to all clients connected to session
@@ -216,13 +276,51 @@ func (h *Hub) SendToUser(sessionID, userID uuid.UUID, msg Message) {
 	}
 }
 
-// Close the session, disconnecting all connected clients
-func (h *Hub) CloseSession(sessionID uuid.UUID) {
+func (h *Hub) PurgeSession(sessionID uuid.UUID) {
+
+	h.mu.Lock()
+
+	// Clone the set of clients to avoid deadlock
+	clients := make([]*Client, 0, len(h.clients[sessionID]))
+	for client := range h.clients[sessionID] {
+		clients = append(clients, client)
+	}
+
+	h.mu.Unlock()
+
+	for _, client := range clients {
+		client.shutdownSend()
+	}
+}
+
+func (h *Hub) RemoveMember(userID, sessionID uuid.UUID) {
 
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	for client := range h.clients[sessionID] {
-		close(client.send)
+	key := memberKey(userID, sessionID)
+	if member, ok := h.members[key]; ok && member.graceTimer != nil {
+		member.graceTimer.Stop()
 	}
+	delete(h.members, key)
+
+	for client := range h.clients[sessionID] {
+		if client.userID == userID {
+			client.shutdownSend()
+		}
+	}
+}
+
+func (h *Hub) GetMemberConnState(userID, sessionID uuid.UUID) (connState ConnState) {
+
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	member, hasState := h.members[memberKey(userID, sessionID)]
+	if hasState {
+		connState = member.connState
+		return
+	}
+
+	return ConnStateNone
 }

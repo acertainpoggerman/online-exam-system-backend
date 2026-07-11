@@ -3,10 +3,10 @@ package submissions
 import (
 	"context"
 	"fmt"
-	"log"
 	"slices"
 
 	store "github.com/acertainpoggerman/online-exam-system/internal/adapters/postgresql/sqlc"
+	"github.com/acertainpoggerman/online-exam-system/internal/apperr"
 	"github.com/acertainpoggerman/online-exam-system/internal/common"
 	"github.com/acertainpoggerman/online-exam-system/internal/core/scripts"
 	"github.com/acertainpoggerman/online-exam-system/internal/core/users"
@@ -80,11 +80,18 @@ func (svc *submissionService) CreateSubmission(ctx context.Context, user store.U
 
 func (svc *submissionService) UpdateSubAnswerForQuestion(ctx context.Context, user store.User, submissionID uuid.UUID, questionID uuid.UUID, answer Answer) error {
 
-	if user.Role != store.UserRoleExaminee {
-		return fmt.Errorf("User role: \"%s\" not allowed", user.Role)
+	if err := common.RequireRole(user, store.UserRoleExaminee); err != nil {
+		return err
 	}
 
-	log.Println(answer.Value)
+	submission, err := svc.q.FindSubmissionByID(ctx, submissionID)
+	if err != nil {
+		return apperr.ErrNotFound
+	}
+
+	if err := common.RequireOwner(user, submission.ExamineeID); err != nil {
+		return err
+	}
 
 	return svc.q.ReplaceSubAnswerForQuestion(ctx, store.ReplaceSubAnswerForQuestionParams{
 		SubmissionID: submissionID,
@@ -92,6 +99,8 @@ func (svc *submissionService) UpdateSubAnswerForQuestion(ctx context.Context, us
 		Value:        answer.Value,
 	})
 }
+
+// ----------------------------------------------------------------------------
 
 func (svc *submissionService) MarkSubmission(ctx context.Context, qtx *store.Queries, submissionID uuid.UUID) error {
 
