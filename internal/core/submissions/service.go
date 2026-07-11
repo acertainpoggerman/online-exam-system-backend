@@ -9,7 +9,6 @@ import (
 	"github.com/acertainpoggerman/online-exam-system/internal/apperr"
 	"github.com/acertainpoggerman/online-exam-system/internal/common"
 	"github.com/acertainpoggerman/online-exam-system/internal/core/scripts"
-	"github.com/acertainpoggerman/online-exam-system/internal/core/users"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -28,17 +27,15 @@ type ExtSubmissionService interface {
 type submissionService struct {
 	q      *store.Queries
 	pool   *pgxpool.Pool
-	user   users.ExtUserService
 	script scripts.ExtScriptService
 }
 
 func NewSubmissionService(
 	q *store.Queries,
 	pool *pgxpool.Pool,
-	user users.ExtUserService,
 	script scripts.ExtScriptService,
 ) *submissionService {
-	return &submissionService{q, pool, user, script}
+	return &submissionService{q, pool, script}
 }
 
 func (svc *submissionService) FindSubmissionByID(ctx context.Context, user store.User, submissionID uuid.UUID) (Submission, error) {
