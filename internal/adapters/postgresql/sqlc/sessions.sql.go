@@ -18,7 +18,7 @@ UPDATE sessions SET
     status = 'closed'
 WHERE sessions.id = $1
     AND sessions.status = 'open'
-RETURNING id, title, status, question_count, started_at, ended_at, join_code, creator_id, script_id
+RETURNING id, title, status, question_count, started_at, ended_at, join_code, allow_any_examinee, creator_id, script_id
 `
 
 // Puts the session in CLOSED mode (default mode). While in
@@ -35,6 +35,7 @@ func (q *Queries) CloseSession(ctx context.Context, id uuid.UUID) (Session, erro
 		&i.StartedAt,
 		&i.EndedAt,
 		&i.JoinCode,
+		&i.AllowAnyExaminee,
 		&i.CreatorID,
 		&i.ScriptID,
 	)
@@ -89,7 +90,7 @@ UPDATE sessions SET
     ended_at    = now()
 WHERE sessions.id = $1
     AND sessions.status = 'started'
-RETURNING id, title, status, question_count, started_at, ended_at, join_code, creator_id, script_id
+RETURNING id, title, status, question_count, started_at, ended_at, join_code, allow_any_examinee, creator_id, script_id
 `
 
 // Sets the session to ENDED mode. Only sessions in STARTED
@@ -105,36 +106,15 @@ func (q *Queries) EndSession(ctx context.Context, id uuid.UUID) (Session, error)
 		&i.StartedAt,
 		&i.EndedAt,
 		&i.JoinCode,
+		&i.AllowAnyExaminee,
 		&i.CreatorID,
 		&i.ScriptID,
 	)
 	return i, err
 }
 
-const findActiveSubmissionInSession = `-- name: FindActiveSubmissionInSession :one
-
-SELECT submissions.id FROM submissions
-WHERE submissions.session_id = $1
-    AND submissions.examinee_id = $2
-    AND submissions.status IN ('joined', 'editable')
-`
-
-type FindActiveSubmissionInSessionParams struct {
-	SessionID  uuid.UUID `json:"session_id"`
-	ExamineeID uuid.UUID `json:"examinee_id"`
-}
-
-// Returns the submission ID if it's found
-// and is still in an active state (JOINED or EDITABLE)
-func (q *Queries) FindActiveSubmissionInSession(ctx context.Context, arg FindActiveSubmissionInSessionParams) (uuid.UUID, error) {
-	row := q.db.QueryRow(ctx, findActiveSubmissionInSession, arg.SessionID, arg.ExamineeID)
-	var id uuid.UUID
-	err := row.Scan(&id)
-	return id, err
-}
-
 const findSessionByID = `-- name: FindSessionByID :one
-SELECT id, title, status, question_count, started_at, ended_at, join_code, creator_id, script_id FROM sessions
+SELECT id, title, status, question_count, started_at, ended_at, join_code, allow_any_examinee, creator_id, script_id FROM sessions
 WHERE sessions.id = $1 LIMIT 1
 `
 
@@ -149,6 +129,7 @@ func (q *Queries) FindSessionByID(ctx context.Context, id uuid.UUID) (Session, e
 		&i.StartedAt,
 		&i.EndedAt,
 		&i.JoinCode,
+		&i.AllowAnyExaminee,
 		&i.CreatorID,
 		&i.ScriptID,
 	)
@@ -156,7 +137,7 @@ func (q *Queries) FindSessionByID(ctx context.Context, id uuid.UUID) (Session, e
 }
 
 const findSessionByJoinCode = `-- name: FindSessionByJoinCode :one
-SELECT id, title, status, question_count, started_at, ended_at, join_code, creator_id, script_id FROM sessions
+SELECT id, title, status, question_count, started_at, ended_at, join_code, allow_any_examinee, creator_id, script_id FROM sessions
 WHERE sessions.join_code ILIKE $1
     AND sessions.status = 'open'
 LIMIT 1
@@ -173,6 +154,7 @@ func (q *Queries) FindSessionByJoinCode(ctx context.Context, joinCode string) (S
 		&i.StartedAt,
 		&i.EndedAt,
 		&i.JoinCode,
+		&i.AllowAnyExaminee,
 		&i.CreatorID,
 		&i.ScriptID,
 	)
@@ -180,7 +162,7 @@ func (q *Queries) FindSessionByJoinCode(ctx context.Context, joinCode string) (S
 }
 
 const findSessionsForExaminer = `-- name: FindSessionsForExaminer :many
-SELECT id, title, status, question_count, started_at, ended_at, join_code, creator_id, script_id FROM sessions
+SELECT id, title, status, question_count, started_at, ended_at, join_code, allow_any_examinee, creator_id, script_id FROM sessions
 WHERE sessions.creator_id = $1
 `
 
@@ -201,6 +183,7 @@ func (q *Queries) FindSessionsForExaminer(ctx context.Context, creatorID uuid.UU
 			&i.StartedAt,
 			&i.EndedAt,
 			&i.JoinCode,
+			&i.AllowAnyExaminee,
 			&i.CreatorID,
 			&i.ScriptID,
 		); err != nil {
@@ -220,7 +203,7 @@ UPDATE sessions SET
     status = 'open'
 WHERE sessions.id = $1
     AND sessions.status = 'closed'
-RETURNING id, title, status, question_count, started_at, ended_at, join_code, creator_id, script_id
+RETURNING id, title, status, question_count, started_at, ended_at, join_code, allow_any_examinee, creator_id, script_id
 `
 
 // Puts the session in OPEN mode. While in OPEN mode
@@ -237,6 +220,7 @@ func (q *Queries) OpenSession(ctx context.Context, id uuid.UUID) (Session, error
 		&i.StartedAt,
 		&i.EndedAt,
 		&i.JoinCode,
+		&i.AllowAnyExaminee,
 		&i.CreatorID,
 		&i.ScriptID,
 	)
@@ -251,24 +235,25 @@ WITH updated_session AS (
         started_at  = now()
     WHERE sessions.id = $1
         AND sessions.status = 'open'
-    RETURNING id, title, status, question_count, started_at, ended_at, join_code, creator_id, script_id
+    RETURNING id, title, status, question_count, started_at, ended_at, join_code, allow_any_examinee, creator_id, script_id
 )
 UPDATE scripts SET locked = true
 FROM updated_session
 WHERE scripts.id = updated_session.script_id
-RETURNING updated_session.id, updated_session.title, updated_session.status, updated_session.question_count, updated_session.started_at, updated_session.ended_at, updated_session.join_code, updated_session.creator_id, updated_session.script_id
+RETURNING updated_session.id, updated_session.title, updated_session.status, updated_session.question_count, updated_session.started_at, updated_session.ended_at, updated_session.join_code, updated_session.allow_any_examinee, updated_session.creator_id, updated_session.script_id
 `
 
 type StartSessionRow struct {
-	ID            uuid.UUID     `json:"id"`
-	Title         string        `json:"title"`
-	Status        SessionStatus `json:"status"`
-	QuestionCount *int32        `json:"question_count"`
-	StartedAt     *time.Time    `json:"started_at"`
-	EndedAt       *time.Time    `json:"ended_at"`
-	JoinCode      string        `json:"join_code"`
-	CreatorID     uuid.UUID     `json:"creator_id"`
-	ScriptID      uuid.UUID     `json:"script_id"`
+	ID               uuid.UUID     `json:"id"`
+	Title            string        `json:"title"`
+	Status           SessionStatus `json:"status"`
+	QuestionCount    *int32        `json:"question_count"`
+	StartedAt        *time.Time    `json:"started_at"`
+	EndedAt          *time.Time    `json:"ended_at"`
+	JoinCode         string        `json:"join_code"`
+	AllowAnyExaminee bool          `json:"allow_any_examinee"`
+	CreatorID        uuid.UUID     `json:"creator_id"`
+	ScriptID         uuid.UUID     `json:"script_id"`
 }
 
 // Sets the session to STARTED mode. Only sessions in OPEN
@@ -284,6 +269,7 @@ func (q *Queries) StartSession(ctx context.Context, id uuid.UUID) (StartSessionR
 		&i.StartedAt,
 		&i.EndedAt,
 		&i.JoinCode,
+		&i.AllowAnyExaminee,
 		&i.CreatorID,
 		&i.ScriptID,
 	)
@@ -297,7 +283,7 @@ UPDATE sessions SET
     script_id   = $3
 WHERE sessions.id = $1
     AND sessions.status IN ('open', 'closed')
-RETURNING id, title, status, question_count, started_at, ended_at, join_code, creator_id, script_id
+RETURNING id, title, status, question_count, started_at, ended_at, join_code, allow_any_examinee, creator_id, script_id
 `
 
 type UpdateSessionFieldsParams struct {
@@ -318,6 +304,7 @@ func (q *Queries) UpdateSessionFields(ctx context.Context, arg UpdateSessionFiel
 		&i.StartedAt,
 		&i.EndedAt,
 		&i.JoinCode,
+		&i.AllowAnyExaminee,
 		&i.CreatorID,
 		&i.ScriptID,
 	)

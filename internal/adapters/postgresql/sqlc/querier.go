@@ -14,7 +14,6 @@ type Querier interface {
 	// Calculates the mark for a submission based on
 	// the individual marks for each question's answer.
 	//
-	//-------------------------------------------------
 	CalculateSubmisionMark(ctx context.Context, submissionID uuid.UUID) (int64, error)
 	// Puts the session in CLOSED mode (default mode). While in
 	// CLOSED mode, examinees cannot join the session. Only
@@ -54,15 +53,17 @@ type Querier interface {
 	// mode can be started.
 	//
 	EndSession(ctx context.Context, id uuid.UUID) (Session, error)
-	// Returns the submission ID if it's found
-	// and is still in an active state (JOINED or EDITABLE)
-	//
-	FindActiveSubmissionInSession(ctx context.Context, arg FindActiveSubmissionInSessionParams) (uuid.UUID, error)
 	// Finds the answer key for a question as a list
 	//
 	//----------------------------------------------
 	FindAnswerKeyForQuestion(ctx context.Context, questionID uuid.UUID) ([]string, error)
 	FindChoiceQuestionByID(ctx context.Context, id uuid.UUID) (ChoiceQuestion, error)
+	// Returns the submission ID if the examinee may open a websocket connection.
+	//
+	// OPEN:     enrolled or left (waiting room entry / reconnect)
+	// STARTED:  disconnected only (grace reconnect; flagged requires appeal first)
+	//
+	FindConnectableSubmission(ctx context.Context, arg FindConnectableSubmissionParams) (uuid.UUID, error)
 	FindExamineeByEmail(ctx context.Context, email string) (User, error)
 	FindExaminerByEmail(ctx context.Context, email string) (User, error)
 	// Finds options for a question order by creation.
@@ -110,13 +111,14 @@ type Querier interface {
 	FindSessionsForExaminer(ctx context.Context, creatorID uuid.UUID) ([]Session, error)
 	// Gets the answers for a submission
 	//
-	//----------------------------------
 	FindSubmissionAnswers(ctx context.Context, id uuid.UUID) ([]FindSubmissionAnswersRow, error)
 	FindSubmissionByID(ctx context.Context, id uuid.UUID) (Submission, error)
+	FindSubmissionStatus(ctx context.Context, arg FindSubmissionStatusParams) (SubmissionStatus, error)
 	FindSubmissionsForSession(ctx context.Context, sessionID uuid.UUID) ([]Submission, error)
 	FindTextQuestionByID(ctx context.Context, id uuid.UUID) (TextQuestion, error)
 	FindUserByEmail(ctx context.Context, email string) (User, error)
 	FindUserByID(ctx context.Context, id uuid.UUID) (User, error)
+	LogProctorEvent(ctx context.Context, arg LogProctorEventParams) (uuid.UUID, error)
 	// Puts the session in OPEN mode. While in OPEN mode
 	// examinees can join the session. Only sessions in
 	// CLOSED mode can be opened.
@@ -136,7 +138,6 @@ type Querier interface {
 	ReplaceOptionsForQuestion(ctx context.Context, arg ReplaceOptionsForQuestionParams) error
 	// Replaces the submission answer for a given question
 	//
-	//----------------------------------------------------
 	ReplaceSubAnswerForQuestion(ctx context.Context, arg ReplaceSubAnswerForQuestionParams) error
 	// Finds the number of scripts belonging to the
 	// examiner with the search query
@@ -150,37 +151,85 @@ type Querier interface {
 	SearchScriptsForExaminer(ctx context.Context, arg SearchScriptsForExaminerParams) ([]Script, error)
 	// Sets the questions for the submission of a user. Intended to
 	// be used after an examiner starts the exam session before
-	// submissions are set as 'editable' for examinees to answer
+	// submissions are set as EDITABLE for examinees to answer
 	//
-	//--------------------------------------------------------------
 	SetQuestionsForSubmissions(ctx context.Context, sessionID uuid.UUID) error
+	// Disconnect during STARTED while still eligible to answer (EDITABLE -> DISCONNECTED).
+	//
+	SetSubmissionDisconnected(ctx context.Context, arg SetSubmissionDisconnectedParams) (Submission, error)
+	// Examiner grants appeal and client is disconnected in
+	// session hub (FLAGGED -> DISCONNECTED).
+	//
+	SetSubmissionDisconnectedFromFlagged(ctx context.Context, arg SetSubmissionDisconnectedFromFlaggedParams) (Submission, error)
+	// Examiner readmit after missing the start window (LEFT -> DISCONNECTED).
+	// Examinee reconnects with SetSubmissionEditableFromDisconnect.
+	//
+	SetSubmissionDisconnectedFromLeft(ctx context.Context, arg SetSubmissionDisconnectedFromLeftParams) (Submission, error)
+	// Reconnect during STARTED after grace disconnect (DISCONNECTED -> EDITABLE).
+	//
+	SetSubmissionEditableFromDisconnect(ctx context.Context, arg SetSubmissionEditableFromDisconnectParams) (Submission, error)
+	// Examiner grants appeal and client is connected in session
+	// hub (FLAGGED -> EDITABLE).
+	//
+	SetSubmissionEditableFromFlagged(ctx context.Context, arg SetSubmissionEditableFromFlaggedParams) (Submission, error)
+	// Flag submission when grace period has expired
+	// (DISCONNECTED -> FLAGGED).
+	//
+	SetSubmissionFlaggedFromDisconnect(ctx context.Context, arg SetSubmissionFlaggedFromDisconnectParams) (Submission, error)
+	// Flag submission when if server flags user as cheating
+	// (EDITABLE -> FLAGGED).
+	//
+	SetSubmissionFlaggedFromEditable(ctx context.Context, arg SetSubmissionFlaggedFromEditableParams) (Submission, error)
+	// Connect during OPEN: first entry (ENROLLED -> JOINED)
+	// or reconnect (LEFT -> JOINED).
+	//
+	SetSubmissionJoined(ctx context.Context, arg SetSubmissionJoinedParams) (Submission, error)
+	// Disconnect during OPEN (JOINED -> LEFT). Ensures session start does not
+	// promote disconnected examinees to EDITABLE.
+	//
+	SetSubmissionLeft(ctx context.Context, arg SetSubmissionLeftParams) (Submission, error)
+	// Set the submission status to a connected state based on current
+	// submission and session state
+	//
+	// submission: (ENROLLED, LEFT) session: OPEN       -> JOINED
+	// submission: (DISCONNECTED)   sesssion: STARTED   -> EDITABLE
+	//
+	SetSubmissionOnConnect(ctx context.Context, arg SetSubmissionOnConnectParams) (Submission, error)
+	// Set the submission status to a disconnected state based
+	// on current submission and session state
+	//
+	// submission: (JOINED)     session: OPEN       -> LEFT
+	// submission: (EDITABLE)   sesssion: STARTED   -> DISCONNECTED
+	//
+	SetSubmissionOnDisconnect(ctx context.Context, arg SetSubmissionOnDisconnectParams) (Submission, error)
 	// Updates the mark for an answer to a question in
 	// a submission. Can only update a submitted submission
 	//
-	//-----------------------------------------------------
 	SetSubmissionQuestionMark(ctx context.Context, arg SetSubmissionQuestionMarkParams) (SubmissionQuestion, error)
-	// Set submissions as editable. Intended to be used
-	// when the session has been started and the questions
-	// for each user's submission has been set
+	// On session start: promote waiting-room examinees and lock out no-shows.
+	// Use after the session is STARTED and submission questions are assigned.
 	//
-	//----------------------------------------------------
-	SetSubmissionsEditableForSession(ctx context.Context, sessionID uuid.UUID) error
+	// ENROLLED -> LEFT: enrolled but never connected during OPEN (see SetSubmissionJoined).
+	// JOINED -> EDITABLE: was in the waiting room when the exam started.
+	//
+	// Rows already LEFT (disconnected during OPEN) are unchanged and require
+	// examiner readmit (SetSubmissionDisconnectedFromLeft) to participate.
+	//
+	SetSubmissionStatusesForStartedSession(ctx context.Context, sessionID uuid.UUID) (int64, error)
+	// Voluntary final submit by the examinee (EDITABLE -> SUBMITTED).
+	//
+	SetSubmissionSubmitted(ctx context.Context, arg SetSubmissionSubmittedParams) (Submission, error)
 	// Sets the session to STARTED mode. Only sessions in OPEN
 	// mode can be started.
 	//
 	StartSession(ctx context.Context, id uuid.UUID) (StartSessionRow, error)
-	// Submits submission for a given session. Intended to be
-	// used by the server to auto lock examinee submissions
-	// when the session ends. Once submitted, the submission
-	// can not be edited again.
+	// On session end: auto-submit all in-progress submissions for the session.
+	// Updates LEFT, EDITABLE, DISCONNECTED, and FLAGGED to SUBMITTED.
 	//
-	//-------------------------------------------------------
-	SubmitAllSubmissionsForSession(ctx context.Context, sessionID uuid.UUID) error
-	// Submits a single submission for an examinee. Intended to
-	// be used by the examinee to submit their answers when done
+	// ENROLLED and JOINED are excluded (should not exist after session start;
+	// see SetSubmissionStatusesForStartedSession). SUBMITTED and MARKED are terminal.
 	//
-	//----------------------------------------------------------
-	SubmitSubmission(ctx context.Context, arg SubmitSubmissionParams) (Submission, error)
+	SubmitAllSubmissionsForSession(ctx context.Context, sessionID uuid.UUID) (int64, error)
 	// Updates the parent question fields if possible.
 	//
 	//------------------------------------------------

@@ -101,10 +101,14 @@ func (ns NullSessionStatus) Value() (driver.Value, error) {
 type SubmissionStatus string
 
 const (
-	SubmissionStatusJoined    SubmissionStatus = "joined"
-	SubmissionStatusEditable  SubmissionStatus = "editable"
-	SubmissionStatusSubmitted SubmissionStatus = "submitted"
-	SubmissionStatusMarked    SubmissionStatus = "marked"
+	SubmissionStatusEnrolled     SubmissionStatus = "enrolled"
+	SubmissionStatusJoined       SubmissionStatus = "joined"
+	SubmissionStatusLeft         SubmissionStatus = "left"
+	SubmissionStatusEditable     SubmissionStatus = "editable"
+	SubmissionStatusDisconnected SubmissionStatus = "disconnected"
+	SubmissionStatusFlagged      SubmissionStatus = "flagged"
+	SubmissionStatusSubmitted    SubmissionStatus = "submitted"
+	SubmissionStatusMarked       SubmissionStatus = "marked"
 )
 
 func (e *SubmissionStatus) Scan(src interface{}) error {
@@ -217,6 +221,19 @@ type Option struct {
 	CreatedAt  time.Time `json:"created_at"`
 }
 
+type ProctorEvent struct {
+	ID         uuid.UUID `json:"id"`
+	Type       string    `json:"type"`
+	OccurredAt time.Time `json:"occurred_at"`
+	ReceivedAt time.Time `json:"received_at"`
+	SessionID  uuid.UUID `json:"session_id"`
+	ExamineeID uuid.UUID `json:"examinee_id"`
+}
+
+type ProctorEventType struct {
+	Name string `json:"name"`
+}
+
 type Question struct {
 	ID        uuid.UUID    `json:"id"`
 	Text      string       `json:"text"`
@@ -238,15 +255,16 @@ type Script struct {
 }
 
 type Session struct {
-	ID            uuid.UUID     `json:"id"`
-	Title         string        `json:"title"`
-	Status        SessionStatus `json:"status"`
-	QuestionCount *int32        `json:"question_count"`
-	StartedAt     *time.Time    `json:"started_at"`
-	EndedAt       *time.Time    `json:"ended_at"`
-	JoinCode      string        `json:"join_code"`
-	CreatorID     uuid.UUID     `json:"creator_id"`
-	ScriptID      uuid.UUID     `json:"script_id"`
+	ID               uuid.UUID     `json:"id"`
+	Title            string        `json:"title"`
+	Status           SessionStatus `json:"status"`
+	QuestionCount    *int32        `json:"question_count"`
+	StartedAt        *time.Time    `json:"started_at"`
+	EndedAt          *time.Time    `json:"ended_at"`
+	JoinCode         string        `json:"join_code"`
+	AllowAnyExaminee bool          `json:"allow_any_examinee"`
+	CreatorID        uuid.UUID     `json:"creator_id"`
+	ScriptID         uuid.UUID     `json:"script_id"`
 }
 
 type Submission struct {

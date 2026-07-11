@@ -16,7 +16,8 @@ const calculateSubmisionMark = `-- name: CalculateSubmisionMark :one
 WITH total AS (
     SELECT sum(sq.mark) AS mark FROM submission_questions sq
     WHERE sq.submission_id = $1::uuid
-) UPDATE submissions SET
+)
+UPDATE submissions SET
     mark    = total.mark,
     status  = 'marked'
 FROM total
@@ -27,8 +28,6 @@ RETURNING total.mark
 
 // Calculates the mark for a submission based on
 // the individual marks for each question's answer.
-//
-// -------------------------------------------------
 func (q *Queries) CalculateSubmisionMark(ctx context.Context, submissionID uuid.UUID) (int64, error) {
 	row := q.db.QueryRow(ctx, calculateSubmisionMark, submissionID)
 	var mark int64
@@ -83,8 +82,6 @@ type FindSubmissionAnswersRow struct {
 }
 
 // Gets the answers for a submission
-//
-// ----------------------------------
 func (q *Queries) FindSubmissionAnswers(ctx context.Context, id uuid.UUID) ([]FindSubmissionAnswersRow, error) {
 	rows, err := q.db.Query(ctx, findSubmissionAnswers, id)
 	if err != nil {
@@ -163,7 +160,8 @@ WITH deleted AS (
     WHERE answer_values.submission_id = $1
         AND answer_values.question_id = $2
     RETURNING 1
-) INSERT INTO answer_values (
+)
+INSERT INTO answer_values (
     submission_id,
     question_id,
     value
@@ -182,8 +180,6 @@ type ReplaceSubAnswerForQuestionParams struct {
 }
 
 // Replaces the submission answer for a given question
-//
-// ----------------------------------------------------
 func (q *Queries) ReplaceSubAnswerForQuestion(ctx context.Context, arg ReplaceSubAnswerForQuestionParams) error {
 	_, err := q.db.Exec(ctx, replaceSubAnswerForQuestion, arg.SubmissionID, arg.QuestionID, arg.Value)
 	return err
@@ -198,7 +194,8 @@ WITH selected AS (
         INNER JOIN submissions ON submissions.session_id = sessions.id
     WHERE sessions.id = $1::uuid
     ORDER BY random()
-) INSERT INTO submission_questions (
+)
+INSERT INTO submission_questions (
     submission_id,
     question_id
 ) SELECT selected.submission_id, selected.question_id FROM selected
@@ -206,9 +203,7 @@ WITH selected AS (
 
 // Sets the questions for the submission of a user. Intended to
 // be used after an examiner starts the exam session before
-// submissions are set as 'editable' for examinees to answer
-//
-// --------------------------------------------------------------
+// submissions are set as EDITABLE for examinees to answer
 func (q *Queries) SetQuestionsForSubmissions(ctx context.Context, sessionID uuid.UUID) error {
 	_, err := q.db.Exec(ctx, setQuestionsForSubmissions, sessionID)
 	return err
@@ -234,8 +229,6 @@ type SetSubmissionQuestionMarkParams struct {
 
 // Updates the mark for an answer to a question in
 // a submission. Can only update a submitted submission
-//
-// -----------------------------------------------------
 func (q *Queries) SetSubmissionQuestionMark(ctx context.Context, arg SetSubmissionQuestionMarkParams) (SubmissionQuestion, error) {
 	row := q.db.QueryRow(ctx, setSubmissionQuestionMark, arg.SubmissionID, arg.QuestionID, arg.Mark)
 	var i SubmissionQuestion
@@ -244,78 +237,6 @@ func (q *Queries) SetSubmissionQuestionMark(ctx context.Context, arg SetSubmissi
 		&i.QuestionID,
 		&i.Mark,
 		&i.CreatedAt,
-	)
-	return i, err
-}
-
-const setSubmissionsEditableForSession = `-- name: SetSubmissionsEditableForSession :exec
-
-UPDATE submissions SET
-    status = 'editable'
-WHERE submissions.session_id = $1
-`
-
-// Set submissions as editable. Intended to be used
-// when the session has been started and the questions
-// for each user's submission has been set
-//
-// ----------------------------------------------------
-func (q *Queries) SetSubmissionsEditableForSession(ctx context.Context, sessionID uuid.UUID) error {
-	_, err := q.db.Exec(ctx, setSubmissionsEditableForSession, sessionID)
-	return err
-}
-
-const submitAllSubmissionsForSession = `-- name: SubmitAllSubmissionsForSession :exec
-
-UPDATE submissions SET
-    status          = 'submitted',
-    submitted_at    = now()
-WHERE submissions.session_id = $1
-    AND submissions.status != 'submitted'
-`
-
-// Submits submission for a given session. Intended to be
-// used by the server to auto lock examinee submissions
-// when the session ends. Once submitted, the submission
-// can not be edited again.
-//
-// -------------------------------------------------------
-func (q *Queries) SubmitAllSubmissionsForSession(ctx context.Context, sessionID uuid.UUID) error {
-	_, err := q.db.Exec(ctx, submitAllSubmissionsForSession, sessionID)
-	return err
-}
-
-const submitSubmission = `-- name: SubmitSubmission :one
-
-UPDATE submissions SET
-    status          = 'submitted',
-    submitted_at    = now()
-WHERE submissions.examinee_id = $1
-    AND submissions.session_id = $2
-    AND submissions.status != 'submitted'
-RETURNING id, mark, status, submitted_at, joined_at, examinee_id, session_id
-`
-
-type SubmitSubmissionParams struct {
-	ExamineeID uuid.UUID `json:"examinee_id"`
-	SessionID  uuid.UUID `json:"session_id"`
-}
-
-// Submits a single submission for an examinee. Intended to
-// be used by the examinee to submit their answers when done
-//
-// ----------------------------------------------------------
-func (q *Queries) SubmitSubmission(ctx context.Context, arg SubmitSubmissionParams) (Submission, error) {
-	row := q.db.QueryRow(ctx, submitSubmission, arg.ExamineeID, arg.SessionID)
-	var i Submission
-	err := row.Scan(
-		&i.ID,
-		&i.Mark,
-		&i.Status,
-		&i.SubmittedAt,
-		&i.JoinedAt,
-		&i.ExamineeID,
-		&i.SessionID,
 	)
 	return i, err
 }
