@@ -43,18 +43,6 @@ DELETE FROM sessions
 WHERE sessions.status = 'closed'
     AND sessions.id = $1;
 
-
--- Returns the submission ID if it's found
--- and is still in an active state (JOINED or EDITABLE)
---
--- name: FindActiveSubmissionInSession :one
-
-SELECT submissions.id FROM submissions
-WHERE submissions.session_id = $1
-    AND submissions.examinee_id = $2
-    AND submissions.status IN ('joined', 'editable');
-
-
 -- Puts the session in OPEN mode. While in OPEN mode
 -- examinees can join the session. Only sessions in
 -- CLOSED mode can be opened.

@@ -13,7 +13,6 @@ SELECT * FROM submissions WHERE submissions.id = $1;
 -- Updates the mark for an answer to a question in
 -- a submission. Can only update a submitted submission
 --
--------------------------------------------------------
 -- name: SetSubmissionQuestionMark :one
 
 UPDATE submission_questions SET
@@ -29,13 +28,13 @@ RETURNING submission_questions.*;
 -- Calculates the mark for a submission based on
 -- the individual marks for each question's answer.
 --
----------------------------------------------------
 -- name: CalculateSubmisionMark :one
 
 WITH total AS (
     SELECT sum(sq.mark) AS mark FROM submission_questions sq
     WHERE sq.submission_id = @submission_id::uuid
-) UPDATE submissions SET
+)
+UPDATE submissions SET
     mark    = total.mark,
     status  = 'marked'
 FROM total
@@ -44,53 +43,10 @@ WHERE submissions.id = @submission_id::uuid
 RETURNING total.mark;
 
 
--- Set submissions as editable. Intended to be used
--- when the session has been started and the questions
--- for each user's submission has been set
---
-------------------------------------------------------
--- name: SetSubmissionsEditableForSession :exec
-
-UPDATE submissions SET
-    status = 'editable'
-WHERE submissions.session_id = $1;
-
-
--- Submits submission for a given session. Intended to be
--- used by the server to auto lock examinee submissions
--- when the session ends. Once submitted, the submission
--- can not be edited again.
---
----------------------------------------------------------
--- name: SubmitAllSubmissionsForSession :exec
-
-UPDATE submissions SET
-    status          = 'submitted',
-    submitted_at    = now()
-WHERE submissions.session_id = $1
-    AND submissions.status != 'submitted';
-
-
--- Submits a single submission for an examinee. Intended to
--- be used by the examinee to submit their answers when done
---
-------------------------------------------------------------
--- name: SubmitSubmission :one
-
-UPDATE submissions SET
-    status          = 'submitted',
-    submitted_at    = now()
-WHERE submissions.examinee_id = $1
-    AND submissions.session_id = $2
-    AND submissions.status != 'submitted'
-RETURNING *;
-
-
 -- Sets the questions for the submission of a user. Intended to
 -- be used after an examiner starts the exam session before
--- submissions are set as 'editable' for examinees to answer
+-- submissions are set as EDITABLE for examinees to answer
 --
-----------------------------------------------------------------
 -- name: SetQuestionsForSubmissions :exec
 
 WITH selected AS (
@@ -100,7 +56,8 @@ WITH selected AS (
         INNER JOIN submissions ON submissions.session_id = sessions.id
     WHERE sessions.id = @session_id::uuid
     ORDER BY random()
-) INSERT INTO submission_questions (
+)
+INSERT INTO submission_questions (
     submission_id,
     question_id
 ) SELECT selected.submission_id, selected.question_id FROM selected;
@@ -108,7 +65,6 @@ WITH selected AS (
 
 -- Replaces the submission answer for a given question
 --
-------------------------------------------------------
 -- name: ReplaceSubAnswerForQuestion :exec
 
 WITH deleted AS (
@@ -116,7 +72,8 @@ WITH deleted AS (
     WHERE answer_values.submission_id = $1
         AND answer_values.question_id = $2
     RETURNING 1
-) INSERT INTO answer_values (
+)
+INSERT INTO answer_values (
     submission_id,
     question_id,
     value
@@ -130,7 +87,6 @@ WHERE submissions.id = $1
 
 -- Gets the answers for a submission
 --
-------------------------------------
 -- name: FindSubmissionAnswers :many
 
 SELECT
