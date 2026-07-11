@@ -10,19 +10,19 @@ INSERT INTO examiners (id) VALUES ($1) RETURNING id;
 INSERT INTO examinees (id) VALUES ($1) RETURNING id;
 
 -- name: FindUserByID :one
-SELECT * FROM
-    users WHERE id = $1 LIMIT 1;
+SELECT * FROM users
+WHERE id = $1 LIMIT 1;
 
 -- name: FindUserByEmail :one
-SELECT * FROM
-    users WHERE email = $1 LIMIT 1;
+SELECT * FROM users
+WHERE email = $1 LIMIT 1;
 
 -- name: FindExaminerByEmail :one
 SELECT users.* FROM
     users INNER JOIN examiners ON users.id = examiners.id
-    WHERE email = $1 LIMIT 1;
+WHERE email = $1 LIMIT 1;
 
 -- name: FindExamineeByEmail :one
 SELECT users.* FROM
     users INNER JOIN examinees ON users.id = examinees.id
-    WHERE email = $1 LIMIT 1;
+WHERE email = $1 LIMIT 1;
