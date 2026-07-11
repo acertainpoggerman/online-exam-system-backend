@@ -32,7 +32,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	repo := store.New(pool)
+	q := store.New(pool)
 
 	// rdb := redis.NewClient(&redis.Options{
 	// 	Addr:     "localhost:6379",
@@ -59,21 +59,21 @@ func main() {
 	// --- Instantiating Services -----------------------------------------------
 	// --------------------------------------------------------------------------
 
-	userService := users.NewUserService(repo, pool, jwtSecretKey, jwtExpiryTime)
-	userHandler := users.NewUserHandler(userService, int(jwtExpiryTime.Seconds()))
-	userHandler.RegisterRoutes(unauthedRouter)
+	authService := users.NewAuthService(q, pool, jwtSecretKey, jwtExpiryTime)
+	authHandler := users.NewAuthHandler(authService, int(jwtExpiryTime.Seconds()))
+	authHandler.RegisterRoutes(unauthedRouter)
 
 	scriptService := scripts.NewScriptService(repo, pool)
 	scriptHandler := scripts.NewScriptHandler(scriptService)
 	scriptHandler.RegisterRoutes(authedRouter)
 
-	submissionService := submissions.NewSubmissionService(repo, pool, userService, scriptService)
+	submissionService := submissions.NewSubmissionService(q, pool, scriptService)
 	submissionHandler := submissions.NewSubmissionHandler(submissionService)
 	submissionHandler.RegisterRoutes(authedRouter)
 
 	hub := sessions.NewHub()
 
-	sessionService := sessions.NewSessionService(repo, pool, hub, submissionService)
+	sessionService := sessions.NewSessionService(q, pool, hub, submissionService)
 	sessionHandler := sessions.NewSessionHandler(sessionService)
 	sessionHandler.RegisterRoutes(authedRouter)
 
