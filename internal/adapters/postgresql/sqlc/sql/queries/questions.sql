@@ -13,7 +13,8 @@ WITH inserted AS (
     WHERE scripts.id = @script_id::uuid
         AND scripts.locked = false
     RETURNING *
-) INSERT INTO choice_questions (
+)
+INSERT INTO choice_questions (
     id,
     is_multiple_choice
 ) SELECT inserted.id, $3 FROM
@@ -38,7 +39,8 @@ WITH inserted AS (
     WHERE scripts.id = @script_id::uuid
         AND scripts.locked = false
     RETURNING *
-) INSERT INTO text_questions (
+)
+INSERT INTO text_questions (
     id,
     is_short_text
 ) SELECT inserted.id, $3 FROM
@@ -60,7 +62,8 @@ WITH deleted AS (
     DELETE FROM answer_keys
     WHERE answer_keys.question_id = $1
     RETURNING 1
-) INSERT INTO answer_keys (
+)
+INSERT INTO answer_keys (
     question_id,
     value
 ) SELECT $1, unnest(@answer_key::text[]) FROM
@@ -120,14 +123,17 @@ WHERE questions.id = $1
 ---------------------------------------------------------------
 -- name: UpsertTextQuestion :exec
 
-WITH deleted AS (
+WITH
+deleted AS (
     SELECT delete_all_subquestions($1)
-), updated_type AS (
+),
+updated_type AS (
     UPDATE questions SET
         type = 'text'
     WHERE questions.id = $1
     RETURNING questions.id
-) INSERT INTO text_questions (
+)
+INSERT INTO text_questions (
     id,
     is_short_text
 ) SELECT $1, $2 FROM
@@ -152,14 +158,17 @@ ON CONFLICT (id) DO UPDATE SET
 ---------------------------------------------------------------
 -- name: UpsertChoiceQuestion :exec
 
-WITH deleted AS (
+WITH
+deleted AS (
     SELECT delete_all_subquestions($1)
-), updated_type AS (
+),
+updated_type AS (
     UPDATE questions SET
         type = 'choice'
     WHERE questions.id = $1
     RETURNING questions.id
-) INSERT INTO choice_questions (
+)
+INSERT INTO choice_questions (
     id,
     is_multiple_choice
 ) SELECT $1, $2 FROM
@@ -229,7 +238,8 @@ SELECT * FROM text_questions WHERE text_questions.id = $1;
 WITH deleted AS (
     DELETE FROM options
     WHERE options.question_id = $1
-) INSERT INTO options (
+)
+INSERT INTO options (
     question_id,
     value,
     image_url
