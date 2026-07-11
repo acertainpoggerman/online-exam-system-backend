@@ -4,7 +4,7 @@ import (
 	"errors"
 	"net/http"
 
-	svcerrors "github.com/acertainpoggerman/online-exam-system/internal/errors"
+	"github.com/acertainpoggerman/online-exam-system/internal/apperr"
 	"github.com/acertainpoggerman/online-exam-system/internal/json"
 )
 
@@ -40,7 +40,7 @@ func (h *UserHandler) registerUser(w http.ResponseWriter, r *http.Request) {
 		body.UserRole,
 	)
 	if err != nil {
-		var fieldErr *svcerrors.FieldError
+		var fieldErr *apperr.FieldError
 		if errors.As(err, &fieldErr) {
 			json.WriteJSON(w, http.StatusUnprocessableEntity, json.Wrapper{"error": fieldErr}, nil)
 			return

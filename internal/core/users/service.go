@@ -7,7 +7,7 @@ import (
 	"time"
 
 	store "github.com/acertainpoggerman/online-exam-system/internal/adapters/postgresql/sqlc"
-	svcerrors "github.com/acertainpoggerman/online-exam-system/internal/errors"
+	"github.com/acertainpoggerman/online-exam-system/internal/apperr"
 	"github.com/acertainpoggerman/online-exam-system/internal/jwt"
 	"github.com/acertainpoggerman/online-exam-system/internal/passwords"
 	"github.com/google/uuid"
@@ -99,7 +99,7 @@ func (svc *userService) RegisterUser(
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-			return "", &svcerrors.FieldError{
+			return "", &apperr.FieldError{
 				Field:   "email",
 				Message: "Email already in use",
 				Code:    "EMAIL_TAKEN",
