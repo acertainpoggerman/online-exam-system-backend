@@ -63,7 +63,11 @@ func main() {
 	authHandler := users.NewAuthHandler(authService, int(jwtExpiryTime.Seconds()))
 	authHandler.RegisterRoutes(unauthedRouter)
 
-	scriptService := scripts.NewScriptService(repo, pool)
+	userService := users.NewUserService(q, pool)
+	userHandler := users.NewUserHandler(userService)
+	userHandler.RegisterRoutes(authedRouter)
+
+	scriptService := scripts.NewScriptService(q, pool)
 	scriptHandler := scripts.NewScriptHandler(scriptService)
 	scriptHandler.RegisterRoutes(authedRouter)
 
