@@ -23,3 +23,14 @@ func RequireOwner(user store.User, ownerID uuid.UUID) error {
 	}
 	return nil
 }
+
+// -----------------------------------------------------------
+// --- Session Related ---------------------------------------
+// -----------------------------------------------------------
+
+func RequireSessionHasStatus(status store.SessionStatus, targets ...store.SessionStatus) error {
+	if !slices.Contains(targets, status) {
+		return apperr.ErrConflict
+	}
+	return nil
+}
