@@ -200,10 +200,11 @@ CREATE TABLE sessions (
     title   VARCHAR(200) NOT NULL,
     status  session_status NOT NULL DEFAULT 'closed',
 
-    question_count  INTEGER DEFAULT NULL,
-    started_at      TIMESTAMPTZ DEFAULT NULL,
-    ended_at        TIMESTAMPTZ DEFAULT NULL,
-    join_code       VARCHAR(10) NOT NULL UNIQUE,
+    question_count      INTEGER DEFAULT NULL,
+    started_at          TIMESTAMPTZ DEFAULT NULL,
+    ended_at            TIMESTAMPTZ DEFAULT NULL,
+    join_code           VARCHAR(10) NOT NULL UNIQUE,
+    allow_any_examinee  BOOLEAN NOT NULL DEFAULT true,
 
     creator_id  UUID REFERENCES examiners(id) NOT NULL,
     script_id   UUID REFERENCES scripts(id) NOT NULL
@@ -211,6 +212,30 @@ CREATE TABLE sessions (
 
 --------------------------------------------------------------------------------
 
+CREATE TABLE proctor_event_types (
+    name TEXT PRIMARY KEY NOT NULL
+);
+
+INSERT INTO proctor_event_types
+    (name)
+VALUES
+    ('APP_STATE_CHANGE'),
+    ('EXTENDED_DISCONNECT'),
+    ('REPEATED_DISCONNECT')
+;
+
+CREATE TABLE proctor_events (
+    id      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    type    TEXT NOT NULL REFERENCES proctor_event_types(name),
+
+    occurred_at TIMESTAMPTZ NOT NULL,
+    received_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+    session_id  UUID NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    examinee_id UUID NOT NULL REFERENCES examinees(id) ON DELETE CASCADE
+);
+
+--------------------------------------------------------------------------------
 
 
 --------------------------------------------------------------------------------
@@ -218,8 +243,12 @@ CREATE TABLE sessions (
 --------------------------------------------------------------------------------
 
 CREATE TYPE submission_status AS ENUM (
+    'enrolled',
     'joined',
+    'left',
     'editable',
+    'disconnected',
+    'flagged',
     'submitted',
     'marked'
 );
@@ -227,10 +256,10 @@ CREATE TYPE submission_status AS ENUM (
 CREATE TABLE submissions (
     id      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     mark    INTEGER CHECK (mark >= 0),
-    status  submission_status NOT NULL DEFAULT 'joined',
+    status  submission_status NOT NULL DEFAULT 'enrolled',
 
     submitted_at    TIMESTAMPTZ,
-    joined_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    joined_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
 
     examinee_id UUID REFERENCES examinees(id) ON DELETE CASCADE NOT NULL,
     session_id  UUID REFERENCES sessions(id) ON DELETE CASCADE NOT NULL,
