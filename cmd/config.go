@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"time"
 
@@ -12,9 +13,9 @@ type config struct {
 
 	// Database, Broker Related
 
-	DatabaseURI  string
-	DatabaseName string
-	RedisURI     string
+	DatabaseName       string
+	DbConnectionString string
+	RedisURI           string
 
 	// Addresses
 
@@ -30,23 +31,27 @@ type config struct {
 	Environment string
 }
 
-func LoadConfig(envPath string) (*config, error) {
-
-	if err := godotenv.Load(envPath); err != nil {
-		return nil, fmt.Errorf("error loading .env file: %v", err)
+func LoadConfig() (*config, error) {
+	log.Println(os.Getwd())
+	for _, path := range []string{".env", ".env.local"} {
+		if _, err := os.Stat(path); err != nil {
+			continue
+		}
+		if err := godotenv.Load(path); err != nil {
+			return nil, fmt.Errorf("error loading %s: %w", path, err)
+		}
 	}
 
 	return &config{
-		// Database / Broker
-		DatabaseURI:  getStringFromEnv("DATABASE_URI", "mongodb://localhost:27017"),
-		DatabaseName: getStringFromEnv("DATABASE_NAME", "online_exam_db"),
-		RedisURI:     getStringFromEnv("REDIS_URI", "localhost:6379"),
-		// Server
-		ServerAddr: getStringFromEnv("SERVER_ADDR", "localhost:3000"),
-		// JWT
+		DatabaseName:       getStringFromEnv("DATABASE_NAME", "online_exam_db"),
+		DbConnectionString: getStringFromEnv("DB_CONNECTION_STRING", ""),
+		RedisURI:           getStringFromEnv("REDIS_URI", "localhost:6379"),
+
+		ServerAddr: getStringFromEnv("SERVER_ADDR", ":3000"),
+
 		JwtSecretKey:  getStringFromEnv("JWT_SECRET_KEY", "secret-key"),
-		JwtExpiryTime: getDurationFromEnv("JWT_EXPIRY_TIME", 1*time.Minute),
-		// DEVELOPMENT
+		JwtExpiryTime: getDurationFromEnv("JWT_EXPIRY_TIME", 1*time.Hour),
+
 		Environment: getStringFromEnv("ENVIRONMENT", "development"),
 	}, nil
 }

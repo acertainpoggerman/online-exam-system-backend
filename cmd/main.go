@@ -5,7 +5,7 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"time"
+
 
 	store "github.com/acertainpoggerman/online-exam-system/internal/adapters/postgresql/sqlc"
 	"github.com/acertainpoggerman/online-exam-system/internal/core/scripts"
@@ -21,14 +21,22 @@ func main() {
 
 	ctx := context.Background()
 
-	jwtSecretKey := []byte("thisissecretkey")
-	jwtExpiryTime := 30 * time.Minute
+	cfg, err := LoadConfig()
+	if err != nil {
+		log.Fatal(err)
+	}
+	if cfg.DbConnectionString == "" {
+		log.Fatal("DB_CONNECTION_STRING is required (set it in .env.local)")
+	}
+
+	jwtSecretKey := []byte(cfg.JwtSecretKey)
+	jwtExpiryTime := cfg.JwtExpiryTime
 
 	// --------------------------------------------------------------------------
 	// --- Instantiating DB & Store ---------------------------------------------
 	// --------------------------------------------------------------------------
 
-	pool, err := pgxpool.New(ctx, "user=postgres password=mysecretpassword dbname=examdb")
+	pool, err := pgxpool.New(ctx, cfg.DbConnectionString)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -88,7 +96,7 @@ func main() {
 	// --- Defining and Running Server ------------------------------------------
 	// --------------------------------------------------------------------------
 
-	addr := ":3000"
+	addr := cfg.ServerAddr
 	log.Printf("Starting server at %s", addr)
 
 	server := http.Server{
