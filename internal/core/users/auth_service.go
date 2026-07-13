@@ -10,7 +10,6 @@ import (
 	"github.com/acertainpoggerman/online-exam-system/internal/apperr"
 	"github.com/acertainpoggerman/online-exam-system/internal/jwt"
 	"github.com/acertainpoggerman/online-exam-system/internal/passwords"
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -19,10 +18,6 @@ type AuthService interface {
 	RegisterUser(ctx context.Context, firstName string, lastName string, email string, password string, role store.UserRole) (string, error)
 	LoginUser(ctx context.Context, email string, password string) (string, error)
 }
-
-// type ExtUserService interface {
-// 	FindExtUserByID(ctx context.Context, userID uuid.UUID) (store.User, error)
-// }
 
 type authService struct {
 	q             *store.Queries
@@ -33,31 +28,6 @@ type authService struct {
 
 func NewAuthService(q *store.Queries, pool *pgxpool.Pool, jwtSecretKey []byte, jwtExpiryTime time.Duration) *authService {
 	return &authService{q, pool, jwtSecretKey, jwtExpiryTime}
-}
-
-// -----------------------------------------------------------------------
-// --- Implementing ExtUserService Interface -----------------------------
-// -----------------------------------------------------------------------
-
-func (svc *authService) FindExtUserByID(ctx context.Context, userID uuid.UUID) (store.User, error) {
-
-	tx, err := svc.pool.Begin(ctx)
-	if err != nil {
-		return store.User{}, err
-	}
-	defer tx.Rollback(ctx)
-	qtx := svc.q.WithTx(tx)
-
-	user, err := qtx.FindUserByID(ctx, userID)
-	if err != nil {
-		return store.User{}, err
-	}
-
-	return store.User{
-		FirstName: user.FirstName,
-		LastName:  user.LastName,
-		Email:     user.Email,
-	}, nil
 }
 
 // -----------------------------------------------------------------------
