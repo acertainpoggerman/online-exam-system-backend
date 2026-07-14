@@ -17,6 +17,13 @@ func NewAuthHandler(svc AuthService, jwtAge int) *AuthHandler {
 	return &AuthHandler{svc, jwtAge}
 }
 
+// Use within a route without authentication. Routes registered include:
+//
+// - POST /register
+//
+// - POST /login
+//
+// - POST /logout
 func (h *AuthHandler) RegisterRoutes(r *http.ServeMux) {
 	r.HandleFunc("POST /register", h.registerUser)
 	r.HandleFunc("POST /login", h.loginUser)
@@ -27,7 +34,7 @@ func (h *AuthHandler) registerUser(w http.ResponseWriter, r *http.Request) {
 
 	var body RegisterUserRequest
 	if err := json.ReadRequestBody(r, &body); err != nil {
-		json.WriteJSON(w, http.StatusBadRequest, json.Wrapper{"error": "Failed to process request body"}, nil)
+		json.WriteJSON(w, http.StatusBadRequest, json.Wrapper{"error": apperr.ErrBadRequest}, nil)
 		return
 	}
 
@@ -45,7 +52,7 @@ func (h *AuthHandler) registerUser(w http.ResponseWriter, r *http.Request) {
 			json.WriteJSON(w, http.StatusUnprocessableEntity, json.Wrapper{"error": fieldErr}, nil)
 			return
 		}
-		json.WriteJSON(w, http.StatusInternalServerError, json.Wrapper{"error": "Failed to register user"}, nil)
+		json.WriteJSON(w, http.StatusInternalServerError, json.Wrapper{"error": err}, nil)
 		return
 	}
 
@@ -66,13 +73,18 @@ func (h *AuthHandler) loginUser(w http.ResponseWriter, r *http.Request) {
 
 	var body LoginUserRequest
 	if err := json.ReadRequestBody(r, &body); err != nil {
-		json.WriteJSON(w, http.StatusBadRequest, json.Wrapper{"error": "Failed to process request body"}, nil)
+		json.WriteJSON(w, http.StatusBadRequest, json.Wrapper{"error": apperr.ErrBadRequest}, nil)
 		return
 	}
 
 	token, err := h.svc.LoginUser(r.Context(), body.Email, body.Password)
 	if err != nil {
-		json.WriteJSON(w, http.StatusUnauthorized, json.Wrapper{"error": "Invalid username or password"}, nil)
+		var fieldErr *apperr.FieldError
+		if errors.As(err, &fieldErr) {
+			json.WriteJSON(w, http.StatusUnauthorized, json.Wrapper{"error": fieldErr}, nil)
+			return
+		}
+		json.WriteJSON(w, http.StatusInternalServerError, json.Wrapper{"error": err}, nil)
 		return
 	}
 

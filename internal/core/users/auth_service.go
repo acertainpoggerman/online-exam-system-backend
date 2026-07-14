@@ -4,13 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"time"
 
 	store "github.com/acertainpoggerman/online-exam-system/internal/adapters/postgresql/sqlc"
 	"github.com/acertainpoggerman/online-exam-system/internal/apperr"
 	"github.com/acertainpoggerman/online-exam-system/internal/jwt"
 	"github.com/acertainpoggerman/online-exam-system/internal/passwords"
-	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -30,6 +31,8 @@ func NewAuthService(q *store.Queries, pool *pgxpool.Pool, jwtSecretKey []byte, j
 	return &authService{q, pool, jwtSecretKey, jwtExpiryTime}
 }
 
+const minPasswordLength = 8
+
 // -----------------------------------------------------------------------
 // --- Implementing authService Interface --------------------------------
 // -----------------------------------------------------------------------
@@ -45,56 +48,68 @@ func (svc *authService) RegisterUser(
 
 	// Hash Password
 
+	if len(password) < minPasswordLength {
+		message := fmt.Sprintf("Password must be at least %d characters", minPasswordLength)
+		return "", &apperr.FieldError{
+			Fields:  []string{"password"},
+			Message: message,
+			Code:    "minLength",
+		}
+	}
+
 	hash, err := passwords.GeneratePasswordHash(password)
 	if err != nil {
-		return "", err
+		log.Printf("Error in RegisterUser: (%v)\n", err)
+		return "", apperr.ErrInternal
 	}
 
 	tx, err := svc.pool.Begin(ctx)
 	if err != nil {
-		return "", err
+		log.Printf("Error in RegisterUser: (%v)\n", err)
+		return "", apperr.ErrInternal
 	}
 	defer tx.Rollback(ctx)
 	qtx := svc.q.WithTx(tx)
 
-	// Add Basic User Details
+	// -----------------------------------------------------------------
+	// --- Creating Based on Role --------------------------------------
+	// -----------------------------------------------------------------
 
-	user, err := qtx.CreateUser(ctx, store.CreateUserParams{
-		FirstName:    firstName,
-		LastName:     lastName,
-		Email:        email,
-		PasswordHash: hash,
-		Role:         role,
-	})
-	if err != nil {
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-			return "", &apperr.FieldError{
-				Field:   "email",
-				Message: "Email already in use",
-				Code:    "EMAIL_TAKEN",
-			}
-		}
-	}
-
-	// Add Specific "Role"
-
+	var user store.User
 	switch role {
+	// -------------------------------------------------
 	case store.UserRoleExaminee:
-		_, err = qtx.CreateExaminee(ctx, user.ID)
+		result, err := qtx.CreateExaminee(ctx, store.CreateExamineeParams{
+			FirstName:    firstName,
+			LastName:     lastName,
+			Email:        email,
+			PasswordHash: hash,
+		})
+		user = store.User(result)
 		if err != nil {
-			return "", err
+			return "", svc.resolveRegisterError(ctx, err)
 		}
+	// -------------------------------------------------
 	case store.UserRoleExaminer:
-		_, err = qtx.CreateExaminer(ctx, user.ID)
+		result, err := qtx.CreateExaminer(ctx, store.CreateExaminerParams{
+			FirstName:    firstName,
+			LastName:     lastName,
+			Email:        email,
+			PasswordHash: hash,
+		})
+		user = store.User(result)
 		if err != nil {
-			return "", err
+			return "", svc.resolveRegisterError(ctx, err)
 		}
+	// -------------------------------------------------
 	default:
-		return "", fmt.Errorf("Requested user role: %v does not exist", role)
+		log.Println("Error in RegisterUser: (could not determine role of user)")
+		return "", apperr.ErrBadRequest
 	}
 
-	// Generate JWT for User
+	// -----------------------------------------------------------------
+	// --- Generate JWT for User ---------------------------------------
+	// -----------------------------------------------------------------
 
 	tokenString, err := jwt.CreateJWT(
 		user,
@@ -102,10 +117,16 @@ func (svc *authService) RegisterUser(
 		svc.jwtExpiryTime,
 	)
 	if err != nil {
-		return "", err
+		log.Printf("Error in RegisterUser: (%v)\n", err)
+		return "", apperr.ErrInternal
 	}
 
-	return tokenString, tx.Commit(ctx)
+	if err := tx.Commit(ctx); err != nil {
+		log.Printf("Error in RegisterUser: could not commit (%v)\n", err)
+		return "", apperr.ErrInternal
+	}
+
+	return tokenString, nil
 }
 
 func (svc *authService) LoginUser(ctx context.Context, email string, password string) (string, error) {
@@ -117,28 +138,38 @@ func (svc *authService) LoginUser(ctx context.Context, email string, password st
 	defer tx.Rollback(ctx)
 	qtx := svc.q.WithTx(tx)
 
-	// Find the user by email (emails are set to be unique in the pool)
+	// -----------------------------------------------------------------
+	// --- Find User Email ---------------------------------------------
+	// -----------------------------------------------------------------
 
 	user, err := qtx.FindUserByEmail(ctx, email)
 	if err != nil {
-		return "", err
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", &apperr.FieldError{
+				Fields:  []string{"email", "password"},
+				Message: "Invalid email or password",
+				Code:    "INVALID_CREDENTIALS",
+			}
+		}
+		log.Printf("Error in LoginUser: could not find email (%v)\n", err)
+		return "", apperr.ErrInternal
 	}
 
-	// Check given password is correct
+	// -----------------------------------------------------------------
+	// --- Check Password ----------------------------------------------
+	// -----------------------------------------------------------------
 
 	if !passwords.VerifyPassword(password, user.PasswordHash) {
-		return "", fmt.Errorf("Wrong username / password")
+		return "", &apperr.FieldError{
+			Fields:  []string{"email", "password"},
+			Message: "Invalid email or password",
+			Code:    "INVALID CREDENTIALS",
+		}
 	}
 
-	// Check role in database
-
-	switch user.Role {
-	case store.UserRoleExaminee:
-	case store.UserRoleExaminer:
-	default:
-	}
-
-	// Generate JWT for User
+	// -----------------------------------------------------------------
+	// --- Generate JWT for User ---------------------------------------
+	// -----------------------------------------------------------------
 
 	tokenString, err := jwt.CreateJWT(
 		user,
@@ -146,8 +177,13 @@ func (svc *authService) LoginUser(ctx context.Context, email string, password st
 		svc.jwtExpiryTime,
 	)
 	if err != nil {
-		return "", err
+		return "", apperr.ErrInternal
 	}
 
-	return tokenString, tx.Commit(ctx)
+	if err := tx.Commit(ctx); err != nil {
+		log.Printf("Error in RegisterUser: could not commit (%v)", err)
+		return "", apperr.ErrInternal
+	}
+
+	return tokenString, nil
 }
