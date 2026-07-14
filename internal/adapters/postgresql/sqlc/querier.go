@@ -24,8 +24,17 @@ type Querier interface {
 	//
 	//------------------------------
 	CreateChoiceQuestion(ctx context.Context, arg CreateChoiceQuestionParams) (uuid.UUID, error)
-	CreateExaminee(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
-	CreateExaminer(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
+	// Creates a new examinee. Intended to be used by students
+	// to partake in examinations. In the future, ensure email
+	// is linked to valid domains e.g. bazeuniversity.edu.ng
+	//
+	CreateExaminee(ctx context.Context, arg CreateExamineeParams) (CreateExamineeRow, error)
+	// Creates new examiner. Intended to be used by administrators
+	// to create user profiles for examiners (e.g. lecturers etc.).
+	// In the future, ensure email is linked to valid domains e.g.
+	// bazeuniversity.edu.ng
+	//
+	CreateExaminer(ctx context.Context, arg CreateExaminerParams) (CreateExaminerRow, error)
 	// Creates a new script
 	//
 	//---------------------
@@ -36,7 +45,6 @@ type Querier interface {
 	//
 	//----------------------------
 	CreateTextQuestion(ctx context.Context, arg CreateTextQuestionParams) (uuid.UUID, error)
-	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
 	// Deletes the question if possible.
 	// cascades to child components (e.g. subquestions & options)
 	//

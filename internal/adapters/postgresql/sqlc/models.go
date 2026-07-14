@@ -207,11 +207,13 @@ type ChoiceQuestion struct {
 }
 
 type Examinee struct {
-	ID uuid.UUID `json:"id"`
+	ID   uuid.UUID `json:"id"`
+	Role UserRole  `json:"role"`
 }
 
 type Examiner struct {
-	ID uuid.UUID `json:"id"`
+	ID   uuid.UUID `json:"id"`
+	Role UserRole  `json:"role"`
 }
 
 type Option struct {
@@ -221,7 +223,7 @@ type Option struct {
 	CreatedAt  time.Time `json:"created_at"`
 }
 
-type ProctorEvent struct {
+type ProctorEventData struct {
 	ID         uuid.UUID `json:"id"`
 	Type       string    `json:"type"`
 	OccurredAt time.Time `json:"occurred_at"`

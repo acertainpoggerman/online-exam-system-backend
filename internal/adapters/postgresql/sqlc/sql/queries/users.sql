@@ -1,13 +1,53 @@
--- name: CreateUser :one
-INSERT INTO users (
-    first_name, last_name, email, password_hash, role
-) VALUES ($1, $2, $3, $4, $5) RETURNING *;
-
+-- Creates new examiner. Intended to be used by administrators
+-- to create user profiles for examiners (e.g. lecturers etc.).
+-- In the future, ensure email is linked to valid domains e.g.
+-- bazeuniversity.edu.ng
+--
 -- name: CreateExaminer :one
-INSERT INTO examiners (id) VALUES ($1) RETURNING id;
 
+WITH
+inserted_user AS (
+    INSERT INTO users (
+        first_name,
+        last_name,
+        email,
+        password_hash,
+        role
+    ) VALUES ($1, $2, $3, $4, 'examiner')
+    RETURNING *
+),
+inserted_examiner AS (
+    INSERT INTO examiners (id)
+    SELECT inserted_user.id FROM inserted_user
+    RETURNING *
+)
+SELECT inserted_user.* FROM inserted_user;
+
+-- Creates a new examinee. Intended to be used by students
+-- to partake in examinations. In the future, ensure email
+-- is linked to valid domains e.g. bazeuniversity.edu.ng
+--
 -- name: CreateExaminee :one
-INSERT INTO examinees (id) VALUES ($1) RETURNING id;
+
+WITH
+inserted_user AS (
+    INSERT INTO users (
+        first_name,
+        last_name,
+        email,
+        password_hash,
+        role
+    ) VALUES ($1, $2, $3, $4, 'examinee')
+    RETURNING *
+),
+inserted_examinee AS (
+    INSERT INTO examinees (id)
+    SELECT inserted_user.id FROM inserted_user
+    RETURNING *
+)
+SELECT inserted_user.* FROM inserted_user;
+
+
 
 -- name: FindUserByID :one
 SELECT * FROM users

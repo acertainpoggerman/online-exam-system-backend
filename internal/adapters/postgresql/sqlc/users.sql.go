@@ -12,48 +12,113 @@ import (
 )
 
 const createExaminee = `-- name: CreateExaminee :one
-INSERT INTO examinees (id) VALUES ($1) RETURNING id
+
+WITH
+inserted_user AS (
+    INSERT INTO users (
+        first_name,
+        last_name,
+        email,
+        password_hash,
+        role
+    ) VALUES ($1, $2, $3, $4, 'examinee')
+    RETURNING id, email, first_name, last_name, password_hash, role
+),
+inserted_examinee AS (
+    INSERT INTO examinees (id)
+    SELECT inserted_user.id FROM inserted_user
+    RETURNING id, role
+)
+SELECT inserted_user.id, inserted_user.email, inserted_user.first_name, inserted_user.last_name, inserted_user.password_hash, inserted_user.role FROM inserted_user
 `
 
-func (q *Queries) CreateExaminee(ctx context.Context, id uuid.UUID) (uuid.UUID, error) {
-	row := q.db.QueryRow(ctx, createExaminee, id)
-	err := row.Scan(&id)
-	return id, err
+type CreateExamineeParams struct {
+	FirstName    string `json:"first_name"`
+	LastName     string `json:"last_name"`
+	Email        string `json:"email"`
+	PasswordHash string `json:"-"`
 }
 
-const createExaminer = `-- name: CreateExaminer :one
-INSERT INTO examiners (id) VALUES ($1) RETURNING id
-`
-
-func (q *Queries) CreateExaminer(ctx context.Context, id uuid.UUID) (uuid.UUID, error) {
-	row := q.db.QueryRow(ctx, createExaminer, id)
-	err := row.Scan(&id)
-	return id, err
+type CreateExamineeRow struct {
+	ID           uuid.UUID `json:"id"`
+	Email        string    `json:"email"`
+	FirstName    string    `json:"first_name"`
+	LastName     string    `json:"last_name"`
+	PasswordHash string    `json:"password_hash"`
+	Role         UserRole  `json:"role"`
 }
 
-const createUser = `-- name: CreateUser :one
-INSERT INTO users (
-    first_name, last_name, email, password_hash, role
-) VALUES ($1, $2, $3, $4, $5) RETURNING id, email, first_name, last_name, password_hash, role
-`
-
-type CreateUserParams struct {
-	FirstName    string   `json:"first_name"`
-	LastName     string   `json:"last_name"`
-	Email        string   `json:"email"`
-	PasswordHash string   `json:"-"`
-	Role         UserRole `json:"role"`
-}
-
-func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, error) {
-	row := q.db.QueryRow(ctx, createUser,
+// Creates a new examinee. Intended to be used by students
+// to partake in examinations. In the future, ensure email
+// is linked to valid domains e.g. bazeuniversity.edu.ng
+func (q *Queries) CreateExaminee(ctx context.Context, arg CreateExamineeParams) (CreateExamineeRow, error) {
+	row := q.db.QueryRow(ctx, createExaminee,
 		arg.FirstName,
 		arg.LastName,
 		arg.Email,
 		arg.PasswordHash,
-		arg.Role,
 	)
-	var i User
+	var i CreateExamineeRow
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.FirstName,
+		&i.LastName,
+		&i.PasswordHash,
+		&i.Role,
+	)
+	return i, err
+}
+
+const createExaminer = `-- name: CreateExaminer :one
+
+WITH
+inserted_user AS (
+    INSERT INTO users (
+        first_name,
+        last_name,
+        email,
+        password_hash,
+        role
+    ) VALUES ($1, $2, $3, $4, 'examiner')
+    RETURNING id, email, first_name, last_name, password_hash, role
+),
+inserted_examiner AS (
+    INSERT INTO examiners (id)
+    SELECT inserted_user.id FROM inserted_user
+    RETURNING id, role
+)
+SELECT inserted_user.id, inserted_user.email, inserted_user.first_name, inserted_user.last_name, inserted_user.password_hash, inserted_user.role FROM inserted_user
+`
+
+type CreateExaminerParams struct {
+	FirstName    string `json:"first_name"`
+	LastName     string `json:"last_name"`
+	Email        string `json:"email"`
+	PasswordHash string `json:"-"`
+}
+
+type CreateExaminerRow struct {
+	ID           uuid.UUID `json:"id"`
+	Email        string    `json:"email"`
+	FirstName    string    `json:"first_name"`
+	LastName     string    `json:"last_name"`
+	PasswordHash string    `json:"password_hash"`
+	Role         UserRole  `json:"role"`
+}
+
+// Creates new examiner. Intended to be used by administrators
+// to create user profiles for examiners (e.g. lecturers etc.).
+// In the future, ensure email is linked to valid domains e.g.
+// bazeuniversity.edu.ng
+func (q *Queries) CreateExaminer(ctx context.Context, arg CreateExaminerParams) (CreateExaminerRow, error) {
+	row := q.db.QueryRow(ctx, createExaminer,
+		arg.FirstName,
+		arg.LastName,
+		arg.Email,
+		arg.PasswordHash,
+	)
+	var i CreateExaminerRow
 	err := row.Scan(
 		&i.ID,
 		&i.Email,
