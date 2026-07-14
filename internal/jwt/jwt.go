@@ -22,7 +22,7 @@ func GetUserDataFromContext(ctx context.Context) (store.User, error) {
 	return user, nil
 }
 
-func toMap(user store.User) map[string]any {
+func asClaims(user store.User) map[string]any {
 	return map[string]any{
 		"id":    user.ID,
 		"email": user.Email,
@@ -47,7 +47,7 @@ func CreateJWT(user store.User, secretKey []byte, expiryTime time.Duration) (str
 			"iss": "online-exam-server",
 			"exp": time.Now().Add(expiryTime).Unix(),
 			// User Claims
-			"user": toMap(user),
+			"user": asClaims(user),
 		},
 	)
 
