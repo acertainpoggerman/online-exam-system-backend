@@ -258,7 +258,7 @@ func (h *ScriptHandler) putQuestion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	json.WriteJSON(w, http.StatusNoContent, json.Wrapper{"question": question}, nil)
+	json.WriteJSON(w, http.StatusOK, json.Wrapper{"question": question}, nil)
 }
 
 func (h *ScriptHandler) deleteQuestion(w http.ResponseWriter, r *http.Request) {
@@ -287,5 +287,5 @@ func (h *ScriptHandler) deleteQuestion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	json.WriteJSON(w, http.StatusNoContent, json.Wrapper{"question": question}, nil)
+	json.WriteJSON(w, http.StatusOK, json.Wrapper{"question": question}, nil)
 }
