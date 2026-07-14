@@ -265,7 +265,7 @@ func (h *WebsocketHandler) readPump(ctx context.Context, user store.User, client
 				msg.Type,
 			)
 
-			var event ProctorEvent
+			var event ProctorEventData
 			if err := json.Unmarshal(payload, &event); err != nil {
 				log.Printf(
 					"Session:(%s) Failed to process proctor event received from client (%s)\n",

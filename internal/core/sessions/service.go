@@ -40,7 +40,7 @@ type SessionService interface {
 
 	OnGraceExpired(ctx context.Context, userID, sessionID uuid.UUID) error
 	SendStateSync(ctx context.Context, userID, sessionID uuid.UUID) error
-	HandleProctorEvent(ctx context.Context, user store.User, event ProctorEvent) error
+	HandleProctorEvent(ctx context.Context, user store.User, event ProctorEventData) error
 
 	MarkSubmissionsForSession(ctx context.Context, user store.User, sessionID uuid.UUID) error
 }
@@ -514,7 +514,7 @@ func (svc *sessionService) SendStateSync(ctx context.Context, userID, sessionID 
 	return nil
 }
 
-func (svc *sessionService) HandleProctorEvent(ctx context.Context, user store.User, event ProctorEvent) error {
+func (svc *sessionService) HandleProctorEvent(ctx context.Context, user store.User, event ProctorEventData) error {
 
 	if err := common.RequireOwner(user, event.ExamineeID); err != nil {
 		return err
