@@ -12,19 +12,25 @@ CREATE TYPE user_role AS ENUM (
 
 CREATE TABLE users (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    email           VARCHAR(100) UNIQUE NOT NULL CHECK (email <> ''),
+    email           VARCHAR(100) UNIQUE NOT NULL CHECK (email ~* '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$'),
     first_name      VARCHAR(50) NOT NULL CHECK (first_name <> ''),
     last_name       VARCHAR(50) NOT NULL CHECK (last_name <> ''),
     password_hash   TEXT NOT NULL CHECK (password_hash <> ''),
-    role            user_role NOT NULL
+    role            user_role NOT NULL,
+
+    UNIQUE (id, role)
 );
 
 CREATE TABLE examiners (
-    id  UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE
+    id      UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    role    user_role NOT NULL DEFAULT 'examiner' CHECK (role = 'examiner'),
+    FOREIGN KEY (id, role) REFERENCES users(id, role)
 );
 
 CREATE TABLE examinees (
-    id  UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE
+    id      UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    role    user_role NOT NULL DEFAULT 'examinee' CHECK (role = 'examinee'),
+    FOREIGN KEY (id, role) REFERENCES users(id, role)
 );
 
 --------------------------------------------------------------------------------
