@@ -41,7 +41,7 @@ type Message struct {
 	Data any         `json:"data,omitempty"`
 }
 
-type ProctorEventData struct{ store.ProctorEventData }
+type ProctorEventData struct{ store.ProctorEvent }
 
 // ---------------------------------------------------------------
 // --- ClientSet -------------------------------------------------
