@@ -18,7 +18,7 @@ UPDATE sessions SET
     status = 'closed'
 WHERE sessions.id = $1
     AND sessions.status = 'open'
-RETURNING id, title, status, question_count, started_at, ended_at, join_code, allow_any_examinee, creator_id, script_id
+RETURNING id, title, status, question_count, started_at, ended_at, join_code, allow_any_examinee, created_at, creator_id, script_id
 `
 
 // Puts the session in CLOSED mode (default mode). While in
@@ -36,6 +36,7 @@ func (q *Queries) CloseSession(ctx context.Context, id uuid.UUID) (Session, erro
 		&i.EndedAt,
 		&i.JoinCode,
 		&i.AllowAnyExaminee,
+		&i.CreatedAt,
 		&i.CreatorID,
 		&i.ScriptID,
 	)
@@ -90,7 +91,7 @@ UPDATE sessions SET
     ended_at    = now()
 WHERE sessions.id = $1
     AND sessions.status = 'started'
-RETURNING id, title, status, question_count, started_at, ended_at, join_code, allow_any_examinee, creator_id, script_id
+RETURNING id, title, status, question_count, started_at, ended_at, join_code, allow_any_examinee, created_at, creator_id, script_id
 `
 
 // Sets the session to ENDED mode. Only sessions in STARTED
@@ -107,6 +108,7 @@ func (q *Queries) EndSession(ctx context.Context, id uuid.UUID) (Session, error)
 		&i.EndedAt,
 		&i.JoinCode,
 		&i.AllowAnyExaminee,
+		&i.CreatedAt,
 		&i.CreatorID,
 		&i.ScriptID,
 	)
@@ -114,7 +116,7 @@ func (q *Queries) EndSession(ctx context.Context, id uuid.UUID) (Session, error)
 }
 
 const findSessionByID = `-- name: FindSessionByID :one
-SELECT id, title, status, question_count, started_at, ended_at, join_code, allow_any_examinee, creator_id, script_id FROM sessions
+SELECT id, title, status, question_count, started_at, ended_at, join_code, allow_any_examinee, created_at, creator_id, script_id FROM sessions
 WHERE sessions.id = $1 LIMIT 1
 `
 
@@ -130,6 +132,7 @@ func (q *Queries) FindSessionByID(ctx context.Context, id uuid.UUID) (Session, e
 		&i.EndedAt,
 		&i.JoinCode,
 		&i.AllowAnyExaminee,
+		&i.CreatedAt,
 		&i.CreatorID,
 		&i.ScriptID,
 	)
@@ -137,7 +140,7 @@ func (q *Queries) FindSessionByID(ctx context.Context, id uuid.UUID) (Session, e
 }
 
 const findSessionByJoinCode = `-- name: FindSessionByJoinCode :one
-SELECT id, title, status, question_count, started_at, ended_at, join_code, allow_any_examinee, creator_id, script_id FROM sessions
+SELECT id, title, status, question_count, started_at, ended_at, join_code, allow_any_examinee, created_at, creator_id, script_id FROM sessions
 WHERE sessions.join_code ILIKE $1
     AND sessions.status = 'open'
 LIMIT 1
@@ -155,19 +158,68 @@ func (q *Queries) FindSessionByJoinCode(ctx context.Context, joinCode string) (S
 		&i.EndedAt,
 		&i.JoinCode,
 		&i.AllowAnyExaminee,
+		&i.CreatedAt,
 		&i.CreatorID,
 		&i.ScriptID,
 	)
 	return i, err
 }
 
-const findSessionsForExaminer = `-- name: FindSessionsForExaminer :many
-SELECT id, title, status, question_count, started_at, ended_at, join_code, allow_any_examinee, creator_id, script_id FROM sessions
-WHERE sessions.creator_id = $1
+const findSessionCountForExaminer = `-- name: FindSessionCountForExaminer :one
+
+SELECT COUNT(*) FROM sessions
+WHERE
+    sessions.creator_id = $1::UUID
+    AND ($2::TEXT = '' OR sessions.title ILIKE '%' || $2::TEXT || '%')
+    AND ($3::session_status IS NULL OR sessions.status = $3::session_status)
 `
 
-func (q *Queries) FindSessionsForExaminer(ctx context.Context, creatorID uuid.UUID) ([]Session, error) {
-	rows, err := q.db.Query(ctx, findSessionsForExaminer, creatorID)
+type FindSessionCountForExaminerParams struct {
+	ExaminerID uuid.UUID         `json:"examiner_id"`
+	Search     string            `json:"search"`
+	Status     NullSessionStatus `json:"status"`
+}
+
+// Finds the number of sessions belonging to the
+// examiner with the search query
+func (q *Queries) FindSessionCountForExaminer(ctx context.Context, arg FindSessionCountForExaminerParams) (int64, error) {
+	row := q.db.QueryRow(ctx, findSessionCountForExaminer, arg.ExaminerID, arg.Search, arg.Status)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const findSessionsForExaminer = `-- name: FindSessionsForExaminer :many
+
+SELECT id, title, status, question_count, started_at, ended_at, join_code, allow_any_examinee, created_at, creator_id, script_id FROM sessions
+WHERE sessions.creator_id = $1::UUID
+    AND ($2::TEXT = '' OR sessions.title ILIKE '%' || $2::TEXT || '%')
+    AND (sessions.created_at, sessions.id) < ($3::TIMESTAMPTZ, $4::UUID)
+    AND ($5::session_status IS NULL OR sessions.status = $5::session_status)
+    ORDER BY sessions.created_at DESC, sessions.id DESC
+LIMIT $6
+`
+
+type FindSessionsForExaminerParams struct {
+	ExaminerID uuid.UUID         `json:"examiner_id"`
+	Search     string            `json:"search"`
+	CursorTs   time.Time         `json:"cursor_ts"`
+	CursorID   uuid.UUID         `json:"cursor_id"`
+	Status     NullSessionStatus `json:"status"`
+	PageSize   int32             `json:"page_size"`
+}
+
+// Gets the sessions belonging to the examiner
+// with cursor pagination and a search query
+func (q *Queries) FindSessionsForExaminer(ctx context.Context, arg FindSessionsForExaminerParams) ([]Session, error) {
+	rows, err := q.db.Query(ctx, findSessionsForExaminer,
+		arg.ExaminerID,
+		arg.Search,
+		arg.CursorTs,
+		arg.CursorID,
+		arg.Status,
+		arg.PageSize,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -184,6 +236,7 @@ func (q *Queries) FindSessionsForExaminer(ctx context.Context, creatorID uuid.UU
 			&i.EndedAt,
 			&i.JoinCode,
 			&i.AllowAnyExaminee,
+			&i.CreatedAt,
 			&i.CreatorID,
 			&i.ScriptID,
 		); err != nil {
@@ -203,7 +256,7 @@ UPDATE sessions SET
     status = 'open'
 WHERE sessions.id = $1
     AND sessions.status = 'closed'
-RETURNING id, title, status, question_count, started_at, ended_at, join_code, allow_any_examinee, creator_id, script_id
+RETURNING id, title, status, question_count, started_at, ended_at, join_code, allow_any_examinee, created_at, creator_id, script_id
 `
 
 // Puts the session in OPEN mode. While in OPEN mode
@@ -221,6 +274,7 @@ func (q *Queries) OpenSession(ctx context.Context, id uuid.UUID) (Session, error
 		&i.EndedAt,
 		&i.JoinCode,
 		&i.AllowAnyExaminee,
+		&i.CreatedAt,
 		&i.CreatorID,
 		&i.ScriptID,
 	)
@@ -235,12 +289,12 @@ WITH updated_session AS (
         started_at  = now()
     WHERE sessions.id = $1
         AND sessions.status = 'open'
-    RETURNING id, title, status, question_count, started_at, ended_at, join_code, allow_any_examinee, creator_id, script_id
+    RETURNING id, title, status, question_count, started_at, ended_at, join_code, allow_any_examinee, created_at, creator_id, script_id
 )
 UPDATE scripts SET locked = true
 FROM updated_session
 WHERE scripts.id = updated_session.script_id
-RETURNING updated_session.id, updated_session.title, updated_session.status, updated_session.question_count, updated_session.started_at, updated_session.ended_at, updated_session.join_code, updated_session.allow_any_examinee, updated_session.creator_id, updated_session.script_id
+RETURNING updated_session.id, updated_session.title, updated_session.status, updated_session.question_count, updated_session.started_at, updated_session.ended_at, updated_session.join_code, updated_session.allow_any_examinee, updated_session.created_at, updated_session.creator_id, updated_session.script_id
 `
 
 type StartSessionRow struct {
@@ -252,6 +306,7 @@ type StartSessionRow struct {
 	EndedAt          *time.Time    `json:"ended_at"`
 	JoinCode         string        `json:"join_code"`
 	AllowAnyExaminee bool          `json:"allow_any_examinee"`
+	CreatedAt        time.Time     `json:"created_at"`
 	CreatorID        uuid.UUID     `json:"creator_id"`
 	ScriptID         uuid.UUID     `json:"script_id"`
 }
@@ -270,6 +325,7 @@ func (q *Queries) StartSession(ctx context.Context, id uuid.UUID) (StartSessionR
 		&i.EndedAt,
 		&i.JoinCode,
 		&i.AllowAnyExaminee,
+		&i.CreatedAt,
 		&i.CreatorID,
 		&i.ScriptID,
 	)
@@ -283,7 +339,7 @@ UPDATE sessions SET
     script_id   = $3
 WHERE sessions.id = $1
     AND sessions.status IN ('open', 'closed')
-RETURNING id, title, status, question_count, started_at, ended_at, join_code, allow_any_examinee, creator_id, script_id
+RETURNING id, title, status, question_count, started_at, ended_at, join_code, allow_any_examinee, created_at, creator_id, script_id
 `
 
 type UpdateSessionFieldsParams struct {
@@ -305,6 +361,7 @@ func (q *Queries) UpdateSessionFields(ctx context.Context, arg UpdateSessionFiel
 		&i.EndedAt,
 		&i.JoinCode,
 		&i.AllowAnyExaminee,
+		&i.CreatedAt,
 		&i.CreatorID,
 		&i.ScriptID,
 	)

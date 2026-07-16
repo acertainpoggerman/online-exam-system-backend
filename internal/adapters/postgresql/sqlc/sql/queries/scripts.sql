@@ -1,7 +1,6 @@
 
 -- Creates a new script
 --
------------------------
 -- name: CreateScript :one
 
 INSERT INTO scripts (
@@ -14,7 +13,6 @@ INSERT INTO scripts (
 
 -- Updates the script if possible
 --
----------------------------------
 -- name: UpdateScriptFields :one
 
 UPDATE scripts SET
@@ -28,48 +26,20 @@ RETURNING id;
 
 -- Deletes the script if possible
 --
----------------------------------
 -- name: DeleteScript :exec
 
 DELETE FROM scripts
 WHERE scripts.id = $1
     AND scripts.locked = false;
 
-
-
 -- Gets the scripts belonging to the examiner
--- with cursor pagination
+-- with cursor pagination and a search query
 --
----------------------------------------------
 -- name: FindScriptsForExaminer :many
 
 SELECT * FROM scripts
 WHERE scripts.creator_id = @examiner_id::UUID
-    AND (scripts.last_modified_at, scripts.id) < (@cursor_ts::TIMESTAMPTZ, @cursor_id::UUID)
-ORDER BY scripts.last_modified_at DESC, scripts.id DESC
-LIMIT @page_size;
-
-
--- Finds the number of scripts belonging to the
--- examiner
---
--- --------------------------------------------
--- name: FindScriptCountForExaminer :one
-
-SELECT COUNT(*) FROM scripts
-WHERE scripts.creator_id = $1;
-
-
-
--- Gets the scripts belonging to the examiner
--- with cursor pagination and a search query
---
----------------------------------------------
--- name: SearchScriptsForExaminer :many
-
-SELECT * FROM scripts
-WHERE scripts.creator_id = @examiner_id::UUID
-    AND scripts.title ILIKE '%' || @search::TEXT || '%'
+    AND (@search::TEXT = '' OR scripts.title ILIKE '%' || @search::TEXT || '%')
     AND (scripts.last_modified_at, scripts.id) < (@cursor_ts::TIMESTAMPTZ, @cursor_id::UUID)
 ORDER BY scripts.last_modified_at DESC, scripts.id DESC
 LIMIT @page_size;
@@ -78,25 +48,24 @@ LIMIT @page_size;
 -- Finds the number of scripts belonging to the
 -- examiner with the search query
 --
--- --------------------------------------------
--- name: SearchScriptCountForExaminer :one
+-- name: FindScriptCountForExaminer :one
 
 SELECT COUNT(*) FROM scripts
 WHERE
     scripts.creator_id = @examiner_id::UUID
-    AND scripts.title ILIKE '%' || @search::TEXT || '%';
+    AND (@search::TEXT = '' OR scripts.title ILIKE '%' || @search::TEXT || '%')
+;
 
 
 
 -- Finds a script by its ID
 --
----------------------------
 -- name: FindScriptByID :one
 
 SELECT * FROM scripts
 WHERE scripts.id = $1;
 
--------------------------------------
+
 -- name: FindScriptForSubmission :one
 
 SELECT scripts.* FROM

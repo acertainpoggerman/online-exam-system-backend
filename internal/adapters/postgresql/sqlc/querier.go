@@ -37,7 +37,6 @@ type Querier interface {
 	CreateExaminer(ctx context.Context, arg CreateExaminerParams) (CreateExaminerRow, error)
 	// Creates a new script
 	//
-	//---------------------
 	CreateScript(ctx context.Context, arg CreateScriptParams) (Script, error)
 	CreateSession(ctx context.Context, arg CreateSessionParams) (uuid.UUID, error)
 	CreateSubmission(ctx context.Context, arg CreateSubmissionParams) (Submission, error)
@@ -52,7 +51,6 @@ type Querier interface {
 	DeleteQuestion(ctx context.Context, id uuid.UUID) error
 	// Deletes the script if possible
 	//
-	//-------------------------------
 	DeleteScript(ctx context.Context, id uuid.UUID) error
 	// Deletes a session only if it is CLOSED
 	//
@@ -100,23 +98,26 @@ type Querier interface {
 	FindQuestionsForSubmission(ctx context.Context, submissionID uuid.UUID) ([]Question, error)
 	// Finds a script by its ID
 	//
-	//-------------------------
 	FindScriptByID(ctx context.Context, id uuid.UUID) (Script, error)
 	// Finds the number of scripts belonging to the
-	// examiner
+	// examiner with the search query
 	//
-	// --------------------------------------------
-	FindScriptCountForExaminer(ctx context.Context, creatorID uuid.UUID) (int64, error)
-	//-----------------------------------
+	FindScriptCountForExaminer(ctx context.Context, arg FindScriptCountForExaminerParams) (int64, error)
 	FindScriptForSubmission(ctx context.Context, submissionID uuid.UUID) (Script, error)
 	// Gets the scripts belonging to the examiner
-	// with cursor pagination
+	// with cursor pagination and a search query
 	//
-	//-------------------------------------------
 	FindScriptsForExaminer(ctx context.Context, arg FindScriptsForExaminerParams) ([]Script, error)
 	FindSessionByID(ctx context.Context, id uuid.UUID) (Session, error)
 	FindSessionByJoinCode(ctx context.Context, joinCode string) (Session, error)
-	FindSessionsForExaminer(ctx context.Context, creatorID uuid.UUID) ([]Session, error)
+	// Finds the number of sessions belonging to the
+	// examiner with the search query
+	//
+	FindSessionCountForExaminer(ctx context.Context, arg FindSessionCountForExaminerParams) (int64, error)
+	// Gets the sessions belonging to the examiner
+	// with cursor pagination and a search query
+	//
+	FindSessionsForExaminer(ctx context.Context, arg FindSessionsForExaminerParams) ([]Session, error)
 	// Gets the answers for a submission
 	//
 	FindSubmissionAnswers(ctx context.Context, id uuid.UUID) ([]FindSubmissionAnswersRow, error)
@@ -147,16 +148,6 @@ type Querier interface {
 	// Replaces the submission answer for a given question
 	//
 	ReplaceSubAnswerForQuestion(ctx context.Context, arg ReplaceSubAnswerForQuestionParams) error
-	// Finds the number of scripts belonging to the
-	// examiner with the search query
-	//
-	// --------------------------------------------
-	SearchScriptCountForExaminer(ctx context.Context, arg SearchScriptCountForExaminerParams) (int64, error)
-	// Gets the scripts belonging to the examiner
-	// with cursor pagination and a search query
-	//
-	//-------------------------------------------
-	SearchScriptsForExaminer(ctx context.Context, arg SearchScriptsForExaminerParams) ([]Script, error)
 	// Sets the questions for the submission of a user. Intended to
 	// be used after an examiner starts the exam session before
 	// submissions are set as EDITABLE for examinees to answer
@@ -244,7 +235,6 @@ type Querier interface {
 	UpdateQuestionFields(ctx context.Context, arg UpdateQuestionFieldsParams) error
 	// Updates the script if possible
 	//
-	//-------------------------------
 	UpdateScriptFields(ctx context.Context, arg UpdateScriptFieldsParams) (uuid.UUID, error)
 	// Updates the top level fields of the sessions
 	//

@@ -30,8 +30,6 @@ type CreateScriptParams struct {
 }
 
 // Creates a new script
-//
-// ---------------------
 func (q *Queries) CreateScript(ctx context.Context, arg CreateScriptParams) (Script, error) {
 	row := q.db.QueryRow(ctx, createScript,
 		arg.Title,
@@ -61,8 +59,6 @@ WHERE scripts.id = $1
 `
 
 // Deletes the script if possible
-//
-// -------------------------------
 func (q *Queries) DeleteScript(ctx context.Context, id uuid.UUID) error {
 	_, err := q.db.Exec(ctx, deleteScript, id)
 	return err
@@ -75,8 +71,6 @@ WHERE scripts.id = $1
 `
 
 // Finds a script by its ID
-//
-// -------------------------
 func (q *Queries) FindScriptByID(ctx context.Context, id uuid.UUID) (Script, error) {
 	row := q.db.QueryRow(ctx, findScriptByID, id)
 	var i Script
@@ -96,15 +90,20 @@ func (q *Queries) FindScriptByID(ctx context.Context, id uuid.UUID) (Script, err
 const findScriptCountForExaminer = `-- name: FindScriptCountForExaminer :one
 
 SELECT COUNT(*) FROM scripts
-WHERE scripts.creator_id = $1
+WHERE
+    scripts.creator_id = $1::UUID
+    AND ($2::TEXT = '' OR scripts.title ILIKE '%' || $2::TEXT || '%')
 `
 
+type FindScriptCountForExaminerParams struct {
+	ExaminerID uuid.UUID `json:"examiner_id"`
+	Search     string    `json:"search"`
+}
+
 // Finds the number of scripts belonging to the
-// examiner
-//
-// --------------------------------------------
-func (q *Queries) FindScriptCountForExaminer(ctx context.Context, creatorID uuid.UUID) (int64, error) {
-	row := q.db.QueryRow(ctx, findScriptCountForExaminer, creatorID)
+// examiner with the search query
+func (q *Queries) FindScriptCountForExaminer(ctx context.Context, arg FindScriptCountForExaminerParams) (int64, error) {
+	row := q.db.QueryRow(ctx, findScriptCountForExaminer, arg.ExaminerID, arg.Search)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -118,7 +117,6 @@ SELECT scripts.id, scripts.title, scripts.heading, scripts.description, scripts.
 WHERE submissions.id = $1::uuid LIMIT 1
 `
 
-// -----------------------------------
 func (q *Queries) FindScriptForSubmission(ctx context.Context, submissionID uuid.UUID) (Script, error) {
 	row := q.db.QueryRow(ctx, findScriptForSubmission, submissionID)
 	var i Script
@@ -139,91 +137,13 @@ const findScriptsForExaminer = `-- name: FindScriptsForExaminer :many
 
 SELECT id, title, heading, description, locked, created_at, last_modified_at, creator_id FROM scripts
 WHERE scripts.creator_id = $1::UUID
-    AND (scripts.last_modified_at, scripts.id) < ($2::TIMESTAMPTZ, $3::UUID)
-ORDER BY scripts.last_modified_at DESC, scripts.id DESC
-LIMIT $4
-`
-
-type FindScriptsForExaminerParams struct {
-	ExaminerID uuid.UUID `json:"examiner_id"`
-	CursorTs   time.Time `json:"cursor_ts"`
-	CursorID   uuid.UUID `json:"cursor_id"`
-	PageSize   int32     `json:"page_size"`
-}
-
-// Gets the scripts belonging to the examiner
-// with cursor pagination
-//
-// -------------------------------------------
-func (q *Queries) FindScriptsForExaminer(ctx context.Context, arg FindScriptsForExaminerParams) ([]Script, error) {
-	rows, err := q.db.Query(ctx, findScriptsForExaminer,
-		arg.ExaminerID,
-		arg.CursorTs,
-		arg.CursorID,
-		arg.PageSize,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []Script{}
-	for rows.Next() {
-		var i Script
-		if err := rows.Scan(
-			&i.ID,
-			&i.Title,
-			&i.Heading,
-			&i.Description,
-			&i.Locked,
-			&i.CreatedAt,
-			&i.LastModifiedAt,
-			&i.CreatorID,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const searchScriptCountForExaminer = `-- name: SearchScriptCountForExaminer :one
-
-SELECT COUNT(*) FROM scripts
-WHERE
-    scripts.creator_id = $1::UUID
-    AND scripts.title ILIKE '%' || $2::TEXT || '%'
-`
-
-type SearchScriptCountForExaminerParams struct {
-	ExaminerID uuid.UUID `json:"examiner_id"`
-	Search     string    `json:"search"`
-}
-
-// Finds the number of scripts belonging to the
-// examiner with the search query
-//
-// --------------------------------------------
-func (q *Queries) SearchScriptCountForExaminer(ctx context.Context, arg SearchScriptCountForExaminerParams) (int64, error) {
-	row := q.db.QueryRow(ctx, searchScriptCountForExaminer, arg.ExaminerID, arg.Search)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
-const searchScriptsForExaminer = `-- name: SearchScriptsForExaminer :many
-
-SELECT id, title, heading, description, locked, created_at, last_modified_at, creator_id FROM scripts
-WHERE scripts.creator_id = $1::UUID
-    AND scripts.title ILIKE '%' || $2::TEXT || '%'
+    AND ($2::TEXT = '' OR scripts.title ILIKE '%' || $2::TEXT || '%')
     AND (scripts.last_modified_at, scripts.id) < ($3::TIMESTAMPTZ, $4::UUID)
 ORDER BY scripts.last_modified_at DESC, scripts.id DESC
 LIMIT $5
 `
 
-type SearchScriptsForExaminerParams struct {
+type FindScriptsForExaminerParams struct {
 	ExaminerID uuid.UUID `json:"examiner_id"`
 	Search     string    `json:"search"`
 	CursorTs   time.Time `json:"cursor_ts"`
@@ -233,10 +153,8 @@ type SearchScriptsForExaminerParams struct {
 
 // Gets the scripts belonging to the examiner
 // with cursor pagination and a search query
-//
-// -------------------------------------------
-func (q *Queries) SearchScriptsForExaminer(ctx context.Context, arg SearchScriptsForExaminerParams) ([]Script, error) {
-	rows, err := q.db.Query(ctx, searchScriptsForExaminer,
+func (q *Queries) FindScriptsForExaminer(ctx context.Context, arg FindScriptsForExaminerParams) ([]Script, error) {
+	rows, err := q.db.Query(ctx, findScriptsForExaminer,
 		arg.ExaminerID,
 		arg.Search,
 		arg.CursorTs,
@@ -289,8 +207,6 @@ type UpdateScriptFieldsParams struct {
 }
 
 // Updates the script if possible
-//
-// -------------------------------
 func (q *Queries) UpdateScriptFields(ctx context.Context, arg UpdateScriptFieldsParams) (uuid.UUID, error) {
 	row := q.db.QueryRow(ctx, updateScriptFields,
 		arg.ID,

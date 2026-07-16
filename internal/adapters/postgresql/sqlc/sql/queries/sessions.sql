@@ -9,9 +9,32 @@ INSERT INTO sessions (
 
 
 
+-- Gets the sessions belonging to the examiner
+-- with cursor pagination and a search query
+--
 -- name: FindSessionsForExaminer :many
+
 SELECT * FROM sessions
-WHERE sessions.creator_id = $1;
+WHERE sessions.creator_id = @examiner_id::UUID
+    AND (@search::TEXT = '' OR sessions.title ILIKE '%' || @search::TEXT || '%')
+    AND (sessions.created_at, sessions.id) < (@cursor_ts::TIMESTAMPTZ, @cursor_id::UUID)
+    AND (sqlc.narg('status')::session_status IS NULL OR sessions.status = sqlc.narg('status')::session_status)
+    ORDER BY sessions.created_at DESC, sessions.id DESC
+LIMIT @page_size;
+
+
+-- Finds the number of sessions belonging to the
+-- examiner with the search query
+--
+-- name: FindSessionCountForExaminer :one
+
+SELECT COUNT(*) FROM sessions
+WHERE
+    sessions.creator_id = @examiner_id::UUID
+    AND (@search::TEXT = '' OR sessions.title ILIKE '%' || @search::TEXT || '%')
+    AND (sqlc.narg('status')::session_status IS NULL OR sessions.status = sqlc.narg('status')::session_status)
+;
+
 
 -- name: FindSessionByID :one
 SELECT * FROM sessions

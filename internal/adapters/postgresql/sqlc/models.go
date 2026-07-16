@@ -223,7 +223,7 @@ type Option struct {
 	CreatedAt  time.Time `json:"created_at"`
 }
 
-type ProctorEventData struct {
+type ProctorEvent struct {
 	ID         uuid.UUID `json:"id"`
 	Type       string    `json:"type"`
 	OccurredAt time.Time `json:"occurred_at"`
@@ -265,6 +265,7 @@ type Session struct {
 	EndedAt          *time.Time    `json:"ended_at"`
 	JoinCode         string        `json:"join_code"`
 	AllowAnyExaminee bool          `json:"allow_any_examinee"`
+	CreatedAt        time.Time     `json:"created_at"`
 	CreatorID        uuid.UUID     `json:"creator_id"`
 	ScriptID         uuid.UUID     `json:"script_id"`
 }

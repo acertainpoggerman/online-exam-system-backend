@@ -212,9 +212,13 @@ CREATE TABLE sessions (
     join_code           VARCHAR(10) NOT NULL UNIQUE,
     allow_any_examinee  BOOLEAN NOT NULL DEFAULT true,
 
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+
     creator_id  UUID REFERENCES examiners(id) NOT NULL,
     script_id   UUID REFERENCES scripts(id) NOT NULL
 );
+
+CREATE INDEX idx_sessions_created_at ON sessions(created_at DESC);
 
 --------------------------------------------------------------------------------
 
@@ -302,12 +306,12 @@ CREATE INDEX idx_sq_created_at ON submission_questions(created_at ASC);
 
 CREATE TABLE answer_values (
     value           TEXT NOT NULL,
-    submission_id   UUID NOT NULL REFERENCES submissions(id) ON DELETE CASCADE,
-    question_id     UUID NOT NULL REFERENCES questions(id) ON DELETE CASCADE,
+    submission_id   UUID NOT NULL,
+    question_id     UUID NOT NULL,
 
     PRIMARY KEY (submission_id, question_id, value),
     FOREIGN KEY (submission_id, question_id)
-        REFERENCES submission_questions(submission_id, question_id)
+        REFERENCES submission_questions(submission_id, question_id) ON DELETE CASCADE
 );
 
 --------------------------------------------------------------------------------
