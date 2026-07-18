@@ -7,6 +7,7 @@ import (
 	"time"
 
 	store "github.com/acertainpoggerman/online-exam-system/internal/adapters/postgresql/sqlc"
+	"github.com/acertainpoggerman/online-exam-system/internal/api"
 	"github.com/acertainpoggerman/online-exam-system/internal/apperr"
 	"github.com/acertainpoggerman/online-exam-system/internal/common"
 	"github.com/acertainpoggerman/online-exam-system/internal/core/submissions"
@@ -17,9 +18,9 @@ import (
 )
 
 type SessionService interface {
-	CreateSession(ctx context.Context, user store.User, data CreateSessionBody) (string, error)
+	CreateSession(ctx context.Context, user store.User, data CreateSessionBody) (Session, error)
 	FindSessionByID(ctx context.Context, user store.User, sessionID uuid.UUID) (Session, error)
-	FindSessions(ctx context.Context, user store.User) ([]Session, error)
+	FindSessions(ctx context.Context, user store.User, cursor *api.Cursor, size int32, search string, status store.SessionStatus) ([]Session, int64, error)
 	UpdateSessionByID(ctx context.Context, user store.User, sessionID uuid.UUID, data CreateSessionBody) (Session, error)
 
 	EnrolWithCode(ctx context.Context, user store.User, joinCode string) (submissions.Submission, error)
@@ -43,6 +44,7 @@ type SessionService interface {
 	HandleProctorEvent(ctx context.Context, user store.User, event ProctorEventData) error
 
 	MarkSubmissionsForSession(ctx context.Context, user store.User, sessionID uuid.UUID) error
+	FindSubmissionsForSession(ctx context.Context, user store.User, sessionID uuid.UUID) ([]submissions.Submission, error)
 }
 
 type ExtSessionService interface {
@@ -102,6 +104,10 @@ func (svc *sessionService) SubmitForSession(ctx context.Context, user store.User
 		return apperr.ErrInternal
 	}
 
+	svc.hub.BroadcastTo(sessionID, Message{
+		Type: MessageTypeParticipantsChanged,
+	}, store.UserRoleExaminer)
+
 	svc.hub.RemoveMember(user.ID, sessionID)
 
 	return nil
@@ -152,13 +158,13 @@ func (svc *sessionService) StartSession(ctx context.Context, user store.User, se
 	// ---------------------------------------------------------------------
 	// --- Broadcasting Start Event ----------------------------------------
 
-	svc.hub.Broadcast(sessionID, Message{
+	svc.hub.BroadcastTo(sessionID, Message{
 		Type: MessageTypeSessionStarted,
 		Data: json.Wrapper{
 			"session_id": sessionID,
 			"started_at": started.StartedAt,
 		},
-	})
+	}, store.UserRoleExaminee)
 
 	return nil
 }
@@ -200,9 +206,9 @@ func (svc *sessionService) EndSession(ctx context.Context, user store.User, sess
 	// ------------------------------------------------------------------------------------
 	// --- Broadcasting End Event ---------------------------------------------------------
 
-	svc.hub.Broadcast(sessionID, Message{
+	svc.hub.BroadcastTo(sessionID, Message{
 		Type: MessageTypeSessionEnded,
-	})
+	}, store.UserRoleExaminee)
 	svc.hub.PurgeSession(sessionID)
 
 	return nil
@@ -371,6 +377,10 @@ func (svc *sessionService) UnflagExaminee(ctx context.Context, user store.User, 
 		Type: MessageTypeSessionUnflagged,
 	})
 
+	svc.hub.BroadcastTo(sessionID, Message{
+		Type: MessageTypeParticipantsChanged,
+	}, store.UserRoleExaminer)
+
 	return nil
 }
 
@@ -417,6 +427,10 @@ func (svc *sessionService) OnExamineeConnect(ctx context.Context, user store.Use
 		return err
 	}
 
+	svc.hub.BroadcastTo(sessionID, Message{
+		Type: MessageTypeParticipantsChanged,
+	}, store.UserRoleExaminer)
+
 	return nil
 }
 
@@ -435,6 +449,10 @@ func (svc *sessionService) OnExamineeDisconnect(ctx context.Context, user store.
 		}
 		return err
 	}
+
+	svc.hub.BroadcastTo(sessionID, Message{
+		Type: MessageTypeParticipantsChanged,
+	}, store.UserRoleExaminer)
 
 	return nil
 }
@@ -487,6 +505,10 @@ func (svc *sessionService) OnGraceExpired(ctx context.Context, userID, sessionID
 	})
 
 	svc.hub.RemoveMember(userID, sessionID)
+
+	svc.hub.BroadcastTo(sessionID, Message{
+		Type: MessageTypeParticipantsChanged,
+	}, store.UserRoleExaminer)
 
 	log.Printf(
 		"Session:(%s), User:(%s) failed to reconnect. Flagged script",
@@ -557,12 +579,42 @@ func (svc *sessionService) HandleProctorEvent(ctx context.Context, user store.Us
 		Type: MessageTypeSessionFlagged,
 	})
 
+	svc.hub.BroadcastTo(event.SessionID, Message{
+		Type: MessageTypeParticipantsChanged,
+	}, store.UserRoleExaminer)
+
 	return nil
 }
 
 // ------------------------------------------------------------------------------------
-// --- Marking Services ---------------------------------------------------------------
+// --- Examiner Services --------------------------------------------------------------
 // ------------------------------------------------------------------------------------
+
+func (svc *sessionService) FindSubmissionsForSession(ctx context.Context, user store.User, sessionID uuid.UUID) ([]submissions.Submission, error) {
+
+	if err := common.RequireRole(user, store.UserRoleExaminer); err != nil {
+		return []submissions.Submission{}, err
+	}
+
+	if session, err := svc.q.FindSessionByID(ctx, sessionID); err != nil {
+		return []submissions.Submission{}, apperr.ErrNotFound
+	} else if err := common.RequireOwner(user, session.CreatorID); err != nil {
+		return []submissions.Submission{}, err
+	}
+
+	results, err := svc.q.FindSubmssionsForSessionWithUser(ctx, sessionID)
+	if err != nil {
+		log.Printf("Error in FindSubmissionsForSession: (%v)\n", err)
+		return nil, apperr.ErrInternal
+	}
+
+	return common.Map(results, func(res store.FindSubmssionsForSessionWithUserRow) submissions.Submission {
+		return submissions.Submission{
+			Submission: res.Submission,
+			Examinee:   res.User,
+		}
+	}), nil
+}
 
 func (svc *sessionService) MarkSubmissionsForSession(ctx context.Context, user store.User, sessionID uuid.UUID) error {
 
@@ -607,53 +659,62 @@ func (svc *sessionService) MarkSubmissionsForSession(ctx context.Context, user s
 // --- CRUD Session Services ----------------------------------------------------------
 // ------------------------------------------------------------------------------------
 
-func (svc *sessionService) CreateSession(ctx context.Context, user store.User, data CreateSessionBody) (string, error) {
+func (svc *sessionService) CreateSession(ctx context.Context, user store.User, data CreateSessionBody) (Session, error) {
 
 	if err := common.RequireRole(user, store.UserRoleExaminer); err != nil {
-		return "", err
+		return Session{}, err
 	}
 
-	tx, err := svc.pool.Begin(ctx)
-	if err != nil {
-		return "", err
-	}
-	defer tx.Rollback(ctx)
-	qtx := svc.q.WithTx(tx)
-
-	id, err := qtx.CreateSession(ctx, store.CreateSessionParams{
+	session, err := svc.q.CreateSession(ctx, store.CreateSessionParams{
 		JoinCode:  generateSessionCode(10),
 		CreatorID: user.ID,
 		Title:     data.Title,
 		ScriptID:  data.ScriptID,
 	})
 	if err != nil {
-		return "", err
+		log.Printf("Error in CreateSession: (%v)\n", err)
+		return Session{}, apperr.ErrInternal
 	}
 
-	return id.String(), tx.Commit(ctx)
+	return Session{session}, nil
 }
 
-func (svc *sessionService) FindSessions(ctx context.Context, user store.User) ([]Session, error) {
+func (svc *sessionService) FindSessions(ctx context.Context, user store.User, cursor *api.Cursor, size int32, search string, status store.SessionStatus) ([]Session, int64, error) {
 
 	if err := common.RequireRole(user, store.UserRoleExaminer); err != nil {
-		return []Session{}, err
+		return []Session{}, 0, err
 	}
 
-	tx, err := svc.pool.Begin(ctx)
-	if err != nil {
-		return []Session{}, err
+	if cursor == nil {
+		cursor = &api.Cursor{Ts: time.Now(), ID: uuid.Max}
 	}
-	defer tx.Rollback(ctx)
-	qtx := svc.q.WithTx(tx)
 
-	sessions, err := qtx.FindSessionsForExaminer(ctx, user.ID)
-	if err != nil {
-		return []Session{}, err
+	var sessions []store.Session
+	var count int64
+	var err error
+
+	if sessions, err = svc.q.FindSessionsForExaminer(ctx, store.FindSessionsForExaminerParams{
+		ExaminerID: user.ID,
+		Search:     search,
+		CursorTs:   cursor.Ts,
+		CursorID:   cursor.ID,
+		PageSize:   size,
+		Status:     store.NullSessionStatus{SessionStatus: status, Valid: status != ""},
+	}); err != nil {
+		return []Session{}, 0, err
+	}
+
+	if count, err = svc.q.FindSessionCountForExaminer(ctx, store.FindSessionCountForExaminerParams{
+		ExaminerID: user.ID,
+		Search:     search,
+		Status:     store.NullSessionStatus{SessionStatus: status, Valid: status != ""},
+	}); err != nil {
+		return []Session{}, 0, err
 	}
 
 	return common.Map(sessions, func(s store.Session) Session {
 		return Session{s}
-	}), nil
+	}), count, nil
 }
 
 func (svc *sessionService) FindSessionByID(ctx context.Context, user store.User, sessionID uuid.UUID) (Session, error) {

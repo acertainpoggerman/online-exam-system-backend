@@ -7,6 +7,7 @@ import (
 	"time"
 
 	store "github.com/acertainpoggerman/online-exam-system/internal/adapters/postgresql/sqlc"
+	"github.com/acertainpoggerman/online-exam-system/internal/apperr"
 	"github.com/acertainpoggerman/online-exam-system/internal/json"
 	"github.com/acertainpoggerman/online-exam-system/internal/jwt"
 	"github.com/google/uuid"
@@ -43,33 +44,7 @@ func (h *WebsocketHandler) RegisterRoutes(r *http.ServeMux) {
 	r.HandleFunc("/sessions/{session_id}", h.HandleSessionConnect)
 }
 
-//------------------------------------------------------------------------------------
-// --- Routes ------------------------------------------------------------------------
-//------------------------------------------------------------------------------------
-
-func (h *WebsocketHandler) HandleSessionConnect(w http.ResponseWriter, r *http.Request) {
-
-	token := r.URL.Query().Get("token")
-	if token == "" {
-		http.Error(w, "missing token", http.StatusUnauthorized)
-		return
-	}
-	userPtr, err := jwt.ValidateJWT(token, h.jwtSecretKey)
-	if err != nil || userPtr == nil {
-		http.Error(w, "invalid token", http.StatusUnauthorized)
-		return
-	}
-	user := *userPtr
-
-	sessionID, err := uuid.Parse(r.PathValue("session_id"))
-	if err != nil {
-		json.WriteJSON(w, http.StatusBadRequest, "Invalid session ID", nil)
-		return
-	}
-
-	// -------------------------------------------------------------
-	// --- Access Guards -------------------------------------------
-	// -------------------------------------------------------------
+func (h *WebsocketHandler) handleExamineeConnect(w http.ResponseWriter, r *http.Request, user store.User, sessionID uuid.UUID) {
 
 	session, err := h.svc.FindSessionByID(r.Context(), user, sessionID)
 	if err != nil {
@@ -106,6 +81,7 @@ func (h *WebsocketHandler) HandleSessionConnect(w http.ResponseWriter, r *http.R
 		send:      make(chan Message, 8),
 		sessionID: sessionID,
 		userID:    user.ID,
+		role:      user.Role,
 	}
 
 	// Attempt to set the client's disconnection state
@@ -160,6 +136,102 @@ func (h *WebsocketHandler) HandleSessionConnect(w http.ResponseWriter, r *http.R
 
 	go h.writePump(client)
 	h.readPump(r.Context(), user, client)
+}
+
+func (h *WebsocketHandler) handleExaminerConnect(w http.ResponseWriter, r *http.Request, user store.User, sessionID uuid.UUID) {
+
+	log.Printf("here")
+
+	session, err := h.svc.FindSessionByID(r.Context(), user, sessionID)
+	if err != nil {
+		json.WriteJSON(w, http.StatusNotFound, "Session not found", nil)
+		return
+	}
+
+	if session.Status != store.SessionStatusOpen && session.Status != store.SessionStatusStarted {
+		json.WriteJSON(w, http.StatusForbidden, "Session is not currently accessible", nil)
+		return
+	}
+
+	// -------------------------------------------------------------
+	// --- Upgrading to Websocket Connection -----------------------
+	// -------------------------------------------------------------
+
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		return
+	}
+
+	client := &Client{
+		conn:      conn,
+		send:      make(chan Message, 8),
+		sessionID: sessionID,
+		userID:    user.ID,
+		role:      user.Role,
+	}
+
+	h.hub.Register(client)
+	defer h.hub.Unregister(client, nil)
+
+	go h.writePump(client)
+
+	// readPump not needed for now
+	h.readPumpExaminer(client)
+
+}
+
+func (h *WebsocketHandler) readPumpExaminer(client *Client) {
+
+	defer client.conn.Close()
+
+	for {
+		_, _, err := client.conn.ReadMessage()
+		if err != nil {
+			break
+		}
+	}
+
+	log.Printf(
+		"Session:(%s) User unreachable for now...\n",
+		client.sessionID,
+	)
+}
+
+//------------------------------------------------------------------------------------
+// --- Routes ------------------------------------------------------------------------
+//------------------------------------------------------------------------------------
+
+func (h *WebsocketHandler) HandleSessionConnect(w http.ResponseWriter, r *http.Request) {
+
+	token := r.URL.Query().Get("token")
+	if token == "" {
+		http.Error(w, "missing token", http.StatusUnauthorized)
+		return
+	}
+	userPtr, err := jwt.ValidateJWT(token, h.jwtSecretKey)
+	if err != nil || userPtr == nil {
+		http.Error(w, "invalid token", http.StatusUnauthorized)
+		return
+	}
+	user := *userPtr
+
+	sessionID, err := uuid.Parse(r.PathValue("session_id"))
+	if err != nil {
+		json.WriteJSON(w, http.StatusBadRequest, json.Wrapper{"error": apperr.ErrBadRequest}, nil)
+		return
+	}
+
+	switch user.Role {
+	// -----------------------------------------------
+	case store.UserRoleExaminee:
+		h.handleExamineeConnect(w, r, user, sessionID)
+	// -----------------------------------------------
+	case store.UserRoleExaminer:
+		h.handleExaminerConnect(w, r, user, sessionID)
+	// -----------------------------------------------
+	default:
+		json.WriteJSON(w, http.StatusBadRequest, json.Wrapper{"error": apperr.ErrForbidden}, nil)
+	}
 }
 
 //------------------------------------------------------------------------------------
