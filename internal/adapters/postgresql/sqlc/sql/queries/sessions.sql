@@ -5,7 +5,7 @@ INSERT INTO sessions (
     script_id,
     title,
     join_code
-) VALUES ($1, $2, $3, $4) RETURNING id;
+) VALUES ($1, $2, $3, $4) RETURNING *;
 
 
 

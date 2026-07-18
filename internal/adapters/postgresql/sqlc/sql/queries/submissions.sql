@@ -10,6 +10,12 @@ SELECT * FROM submissions WHERE submissions.session_id = $1;
 SELECT * FROM submissions WHERE submissions.id = $1;
 
 
+-- name: FindSubmssionsForSessionWithUser :many
+SELECT sqlc.embed(submissions), sqlc.embed(users) FROM
+    submissions INNER JOIN users ON submissions.examinee_id = users.id
+WHERE submissions.session_id = $1;
+
+
 -- Updates the mark for an answer to a question in
 -- a submission. Can only update a submitted submission
 --

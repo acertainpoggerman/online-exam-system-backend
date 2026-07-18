@@ -38,7 +38,7 @@ type Querier interface {
 	// Creates a new script
 	//
 	CreateScript(ctx context.Context, arg CreateScriptParams) (Script, error)
-	CreateSession(ctx context.Context, arg CreateSessionParams) (uuid.UUID, error)
+	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
 	CreateSubmission(ctx context.Context, arg CreateSubmissionParams) (Submission, error)
 	// Creates a new text question
 	//
@@ -124,6 +124,7 @@ type Querier interface {
 	FindSubmissionByID(ctx context.Context, id uuid.UUID) (Submission, error)
 	FindSubmissionStatus(ctx context.Context, arg FindSubmissionStatusParams) (SubmissionStatus, error)
 	FindSubmissionsForSession(ctx context.Context, sessionID uuid.UUID) ([]Submission, error)
+	FindSubmssionsForSessionWithUser(ctx context.Context, sessionID uuid.UUID) ([]FindSubmssionsForSessionWithUserRow, error)
 	FindTextQuestionByID(ctx context.Context, id uuid.UUID) (TextQuestion, error)
 	FindUserByEmail(ctx context.Context, email string) (User, error)
 	FindUserByID(ctx context.Context, id uuid.UUID) (User, error)

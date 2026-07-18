@@ -49,7 +49,7 @@ INSERT INTO sessions (
     script_id,
     title,
     join_code
-) VALUES ($1, $2, $3, $4) RETURNING id
+) VALUES ($1, $2, $3, $4) RETURNING id, title, status, question_count, started_at, ended_at, join_code, allow_any_examinee, created_at, creator_id, script_id
 `
 
 type CreateSessionParams struct {
@@ -59,16 +59,28 @@ type CreateSessionParams struct {
 	JoinCode  string    `json:"join_code"`
 }
 
-func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (uuid.UUID, error) {
+func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error) {
 	row := q.db.QueryRow(ctx, createSession,
 		arg.CreatorID,
 		arg.ScriptID,
 		arg.Title,
 		arg.JoinCode,
 	)
-	var id uuid.UUID
-	err := row.Scan(&id)
-	return id, err
+	var i Session
+	err := row.Scan(
+		&i.ID,
+		&i.Title,
+		&i.Status,
+		&i.QuestionCount,
+		&i.StartedAt,
+		&i.EndedAt,
+		&i.JoinCode,
+		&i.AllowAnyExaminee,
+		&i.CreatedAt,
+		&i.CreatorID,
+		&i.ScriptID,
+	)
+	return i, err
 }
 
 const deleteSessionByID = `-- name: DeleteSessionByID :exec

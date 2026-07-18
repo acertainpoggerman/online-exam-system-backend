@@ -153,6 +153,51 @@ func (q *Queries) FindSubmissionsForSession(ctx context.Context, sessionID uuid.
 	return items, nil
 }
 
+const findSubmssionsForSessionWithUser = `-- name: FindSubmssionsForSessionWithUser :many
+SELECT submissions.id, submissions.mark, submissions.status, submissions.submitted_at, submissions.joined_at, submissions.examinee_id, submissions.session_id, users.id, users.email, users.first_name, users.last_name, users.password_hash, users.role FROM
+    submissions INNER JOIN users ON submissions.examinee_id = users.id
+WHERE submissions.session_id = $1
+`
+
+type FindSubmssionsForSessionWithUserRow struct {
+	Submission Submission `json:"submission"`
+	User       User       `json:"user"`
+}
+
+func (q *Queries) FindSubmssionsForSessionWithUser(ctx context.Context, sessionID uuid.UUID) ([]FindSubmssionsForSessionWithUserRow, error) {
+	rows, err := q.db.Query(ctx, findSubmssionsForSessionWithUser, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []FindSubmssionsForSessionWithUserRow{}
+	for rows.Next() {
+		var i FindSubmssionsForSessionWithUserRow
+		if err := rows.Scan(
+			&i.Submission.ID,
+			&i.Submission.Mark,
+			&i.Submission.Status,
+			&i.Submission.SubmittedAt,
+			&i.Submission.JoinedAt,
+			&i.Submission.ExamineeID,
+			&i.Submission.SessionID,
+			&i.User.ID,
+			&i.User.Email,
+			&i.User.FirstName,
+			&i.User.LastName,
+			&i.User.PasswordHash,
+			&i.User.Role,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const replaceSubAnswerForQuestion = `-- name: ReplaceSubAnswerForQuestion :exec
 
 WITH deleted AS (
