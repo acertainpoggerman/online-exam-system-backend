@@ -4,6 +4,8 @@ import (
 	"errors"
 	"net/http"
 
+	store "github.com/acertainpoggerman/online-exam-system/internal/adapters/postgresql/sqlc"
+	"github.com/acertainpoggerman/online-exam-system/internal/api"
 	"github.com/acertainpoggerman/online-exam-system/internal/json"
 	"github.com/acertainpoggerman/online-exam-system/internal/jwt"
 	"github.com/google/uuid"
@@ -34,7 +36,7 @@ func (h *SessionHandler) RegisterRoutes(r *http.ServeMux) {
 	r.HandleFunc("POST /sessions/{session_id}/examinees/{examinee_id}/unflag", h.unflagExaminee)
 	r.HandleFunc("POST /sessions/{session_id}/submit", h.submitBySessionID)
 
-	// /sessions/{session_id}/examinees
+	r.HandleFunc("GET /sessions/{session_id}/examinees", h.getExamineesInSession)
 
 	// POST /sessions/{session_id}/submit					(For examinees will submit the submission for that session)
 	// PUT	/sessions/{session_id}/answers/{question_id}	(For examines will change the answer of a given question)
@@ -269,6 +271,29 @@ func (h *SessionHandler) markSessionByID(w http.ResponseWriter, r *http.Request)
 	json.WriteJSON(w, http.StatusNoContent, nil, nil)
 }
 
+func (h *SessionHandler) getExamineesInSession(w http.ResponseWriter, r *http.Request) {
+
+	user, err := jwt.GetUserDataFromContext(r.Context())
+	if err != nil {
+		json.WriteJSON(w, http.StatusBadRequest, "Could not get user", nil)
+		return
+	}
+
+	sessionID, err := uuid.Parse(r.PathValue("session_id"))
+	if err != nil {
+		json.WriteJSON(w, http.StatusBadRequest, "Invalid session ID", nil)
+		return
+	}
+
+	examinees, err := h.svc.FindSubmissionsForSession(r.Context(), user, sessionID)
+	if err != nil {
+		json.WriteJSON(w, http.StatusInternalServerError, json.Wrapper{"error": err}, nil)
+		return
+	}
+
+	json.WriteJSON(w, http.StatusOK, json.Wrapper{"examinees": examinees}, nil)
+}
+
 // -----------------------------------------------------------------------
 // --- Basic CRUD Handlers -----------------------------------------------
 // -----------------------------------------------------------------------
@@ -287,13 +312,13 @@ func (h *SessionHandler) postSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := h.svc.CreateSession(r.Context(), user, body)
+	session, err := h.svc.CreateSession(r.Context(), user, body)
 	if err != nil {
 		json.WriteJSON(w, http.StatusInternalServerError, json.Wrapper{"error": err}, nil)
 		return
 	}
 
-	json.WriteJSON(w, http.StatusCreated, json.Wrapper{"session_id": id}, nil)
+	json.WriteJSON(w, http.StatusCreated, json.Wrapper{"session": session}, nil)
 }
 
 func (h *SessionHandler) getSessions(w http.ResponseWriter, r *http.Request) {
@@ -304,13 +329,38 @@ func (h *SessionHandler) getSessions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sessions, err := h.svc.FindSessions(r.Context(), user)
+	query := r.URL.Query()
+
+	search := query.Get("search")
+	status := store.SessionStatus(query.Get("status"))
+	cursor, err := api.DecodeCursor(query.Get("cursor"))
+	if err != nil {
+		cursor = nil
+	}
+
+	const size int32 = 10
+	sessions, count, err := h.svc.FindSessions(r.Context(), user, cursor, size+1, search, status)
 	if err != nil {
 		json.WriteJSON(w, http.StatusInternalServerError, json.Wrapper{"error": err}, nil)
 		return
 	}
 
-	json.WriteJSON(w, http.StatusOK, json.Wrapper{"sessions": sessions}, nil)
+	if len(sessions) > int(size) {
+		last := sessions[size-1]
+		next := api.Cursor{Ts: last.CreatedAt, ID: last.ID}
+
+		json.WriteJSON(w, http.StatusOK, json.Wrapper{
+			"sessions": sessions[:size],
+			"count":    count,
+			"next":     api.EncodeCursor(next),
+		}, nil)
+		return
+	}
+
+	json.WriteJSON(w, http.StatusOK, json.Wrapper{
+		"sessions": sessions,
+		"count":    count,
+	}, nil)
 }
 
 func (h *SessionHandler) getSessionByID(w http.ResponseWriter, r *http.Request) {

@@ -34,6 +34,8 @@ const (
 
 	// Event from clients signaling unusual behaviour and actions
 	MessageTypeProctorEvent MessageType = "session:proctor_event"
+
+	MessageTypeParticipantsChanged MessageType = "session:participants_changed"
 )
 
 type Message struct {
@@ -86,6 +88,7 @@ type Client struct {
 	sessionID uuid.UUID
 	userID    uuid.UUID
 	closeSend sync.Once
+	role      store.UserRole
 }
 
 // Shuts down the client's send channel. Only does it
@@ -230,7 +233,7 @@ func (h *Hub) Unregister(client *Client, onGraceExpired func()) {
 	// Will run onGraceExpired if the client does not call Register()
 	// after the grace period.
 
-	gracePeriod := 40 * time.Second
+	gracePeriod := 2 * time.Minute
 	if onGraceExpired != nil {
 		member.graceTimer = time.AfterFunc(gracePeriod, onGraceExpired)
 	}
@@ -245,6 +248,28 @@ func (h *Hub) Broadcast(sessionID uuid.UUID, msg Message) {
 	defer h.mu.RUnlock()
 
 	for client := range h.clients[sessionID] { // Look through all clients to send message
+		select {
+		case client.send <- msg:
+			log.Printf(
+				"Session:(%s) Sent to client message type \"%s\"\n",
+				sessionID,
+				msg.Type,
+			)
+
+		default: // Ignores client immediately if client.send is blocked
+		}
+	}
+}
+
+func (h *Hub) BroadcastTo(sessionID uuid.UUID, msg Message, role store.UserRole) {
+
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	for client := range h.clients[sessionID] {
+		if client.role != role {
+			continue
+		}
 		select {
 		case client.send <- msg:
 			log.Printf(
