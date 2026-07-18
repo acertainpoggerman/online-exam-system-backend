@@ -129,59 +129,38 @@ func (svc *scriptService) findQuestionByID(ctx context.Context, qtx *store.Queri
 
 func (svc *scriptService) FindScripts(ctx context.Context, user store.User, cursor *api.Cursor, size int32, search string) ([]Script, int64, error) {
 
-	if user.Role != store.UserRoleExaminer {
-		return []Script{}, 0, fmt.Errorf("Cannot access resource as: %s", user.Role)
+	if err := common.RequireRole(user, store.UserRoleExaminer); err != nil {
+		return []Script{}, 0, err
 	}
 
 	if cursor == nil {
 		cursor = &api.Cursor{Ts: time.Now(), ID: uuid.Max}
 	}
 
-	tx, err := svc.pool.Begin(ctx)
-	if err != nil {
-		return []Script{}, 0, err
-	}
-	defer tx.Rollback(ctx)
-	qtx := svc.q.WithTx(tx)
-
 	var scripts []store.Script
 	var count int64
+	var err error
 
-	if search == "" {
-		if scripts, err = qtx.FindScriptsForExaminer(ctx, store.FindScriptsForExaminerParams{
-			ExaminerID: user.ID,
-			CursorTs:   cursor.Ts,
-			CursorID:   cursor.ID,
-			PageSize:   size,
-		}); err != nil {
-			return []Script{}, 0, err
-		}
+	if scripts, err = svc.q.FindScriptsForExaminer(ctx, store.FindScriptsForExaminerParams{
+		ExaminerID: user.ID,
+		Search:     search,
+		CursorTs:   cursor.Ts,
+		CursorID:   cursor.ID,
+		PageSize:   size,
+	}); err != nil {
+		return []Script{}, 0, err
+	}
 
-		if count, err = qtx.FindScriptCountForExaminer(ctx, user.ID); err != nil {
-			return []Script{}, 0, err
-		}
-	} else {
-		if scripts, err = qtx.SearchScriptsForExaminer(ctx, store.SearchScriptsForExaminerParams{
-			ExaminerID: user.ID,
-			Search:     search,
-			CursorTs:   cursor.Ts,
-			CursorID:   cursor.ID,
-			PageSize:   size,
-		}); err != nil {
-			return []Script{}, 0, err
-		}
-
-		if count, err = qtx.SearchScriptCountForExaminer(ctx, store.SearchScriptCountForExaminerParams{
-			ExaminerID: user.ID,
-			Search:     search,
-		}); err != nil {
-			return []Script{}, 0, err
-		}
+	if count, err = svc.q.FindScriptCountForExaminer(ctx, store.FindScriptCountForExaminerParams{
+		ExaminerID: user.ID,
+		Search:     search,
+	}); err != nil {
+		return []Script{}, 0, err
 	}
 
 	return common.Map(scripts, func(s store.Script) Script {
 		return Script{Script: s}
-	}), count, tx.Commit(ctx)
+	}), count, nil
 }
 
 func (svc *scriptService) FindScriptByID(ctx context.Context, user store.User, scriptID uuid.UUID) (Script, error) {
