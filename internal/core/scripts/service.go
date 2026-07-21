@@ -25,7 +25,7 @@ type ScriptService interface {
 }
 
 type ExtScriptService interface {
-	FindQuestionByID(ctx context.Context, questionID uuid.UUID) (Question, error)
+	FindQuestionByID(ctx context.Context, questionID uuid.UUID, showAnswer bool) (Question, error)
 }
 
 type scriptService struct {
