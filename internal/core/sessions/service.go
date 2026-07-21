@@ -10,7 +10,7 @@ import (
 	"github.com/acertainpoggerman/online-exam-system/internal/api"
 	"github.com/acertainpoggerman/online-exam-system/internal/apperr"
 	"github.com/acertainpoggerman/online-exam-system/internal/common"
-	"github.com/acertainpoggerman/online-exam-system/internal/core/scripts"
+	"github.com/acertainpoggerman/online-exam-system/internal/core/examscripts"
 	"github.com/acertainpoggerman/online-exam-system/internal/json"
 	"github.com/google/uuid"
 	"github.com/jackc/pgerrcode"
@@ -68,14 +68,14 @@ type sessionService struct {
 	q      *store.Queries
 	pool   *pgxpool.Pool
 	hub    *Hub
-	script scripts.ExtScriptService
+	script examscripts.ExtScriptService
 }
 
 func NewSessionService(
 	q *store.Queries,
 	pool *pgxpool.Pool,
 	hub *Hub,
-	script scripts.ExtScriptService,
+	script examscripts.ExtScriptService,
 ) *sessionService {
 	return &sessionService{q, pool, hub, script}
 }

@@ -1,4 +1,4 @@
-package scripts
+package examscripts
 
 import (
 	"context"

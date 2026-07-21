@@ -9,7 +9,7 @@ import (
 	store "github.com/acertainpoggerman/online-exam-system/internal/adapters/postgresql/sqlc"
 	"github.com/acertainpoggerman/online-exam-system/internal/apperr"
 	"github.com/acertainpoggerman/online-exam-system/internal/common"
-	"github.com/acertainpoggerman/online-exam-system/internal/core/scripts"
+	"github.com/acertainpoggerman/online-exam-system/internal/core/examscripts"
 	"github.com/google/uuid"
 )
 
@@ -115,13 +115,13 @@ func (svc *sessionService) autoMarkSubmission(ctx context.Context, q *store.Quer
 }
 
 // Returns if the question answer given is correct or not.
-func (svc *sessionService) isCorrect(question scripts.Question, answer []string) (bool, error) {
+func (svc *sessionService) isCorrect(question examscripts.Question, answer []string) (bool, error) {
 
 	switch subq := question.SubQuestion.(type) {
 
 	// ------------------------------------------------------
 
-	case *scripts.ChoiceQuestion:
+	case *examscripts.ChoiceQuestion:
 		return svc.isCorrectChoiceQuestion(
 			subq.IsMultipleChoice,
 			question.AnswerKey,
@@ -130,7 +130,7 @@ func (svc *sessionService) isCorrect(question scripts.Question, answer []string)
 
 	// ------------------------------------------------------
 
-	case *scripts.TextQuestion:
+	case *examscripts.TextQuestion:
 		return svc.isCorrectTextQuestion(
 			question.AnswerKey,
 			answer,

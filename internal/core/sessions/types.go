@@ -4,7 +4,7 @@ import (
 	"math/rand/v2"
 
 	store "github.com/acertainpoggerman/online-exam-system/internal/adapters/postgresql/sqlc"
-	"github.com/acertainpoggerman/online-exam-system/internal/core/scripts"
+	"github.com/acertainpoggerman/online-exam-system/internal/core/examscripts"
 	"github.com/google/uuid"
 )
 
@@ -50,8 +50,8 @@ type Submission struct {
 
 type Answer struct {
 	store.SubmissionQuestion
-	Question scripts.Question `json:"question,omitzero"`
-	Value    []string         `json:"value"`
+	Question examscripts.Question `json:"question,omitzero"`
+	Value    []string             `json:"value"`
 }
 
 // ---------------------------------------------------------

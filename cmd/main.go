@@ -7,7 +7,7 @@ import (
 	"net/http"
 
 	store "github.com/acertainpoggerman/online-exam-system/internal/adapters/postgresql/sqlc"
-	"github.com/acertainpoggerman/online-exam-system/internal/core/scripts"
+	"github.com/acertainpoggerman/online-exam-system/internal/core/examscripts"
 	"github.com/acertainpoggerman/online-exam-system/internal/core/sessions"
 	"github.com/acertainpoggerman/online-exam-system/internal/core/users"
 	"github.com/acertainpoggerman/online-exam-system/internal/middleware"
@@ -73,8 +73,8 @@ func main() {
 	userHandler := users.NewUserHandler(userService)
 	userHandler.RegisterRoutes(authedRouter)
 
-	scriptService := scripts.NewScriptService(q, pool)
-	scriptHandler := scripts.NewScriptHandler(scriptService)
+	scriptService := examscripts.NewScriptService(q, pool)
+	scriptHandler := examscripts.NewScriptHandler(scriptService)
 	scriptHandler.RegisterRoutes(authedRouter)
 
 	hub := sessions.NewHub()
