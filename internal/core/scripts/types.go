@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	store "github.com/acertainpoggerman/online-exam-system/internal/adapters/postgresql/sqlc"
-	"github.com/acertainpoggerman/online-exam-system/internal/update"
 	"github.com/go-viper/mapstructure/v2"
 )
 
@@ -22,12 +21,13 @@ type UpdateScriptBody struct {
 
 type Script struct {
 	store.Script
-	Questions []Question `json:"questions"`
+	TotalMarks int        `json:"total_marks"`
+	Questions  []Question `json:"questions"`
 }
 
-// --------------------------------------------------------------------------
-// --- QUESTION -------------------------------------------------------------
-// --------------------------------------------------------------------------
+// ---------------------------------------------------------------
+// --- QUESTION --------------------------------------------------
+// ---------------------------------------------------------------
 
 // Using composition, you can create an interface that contains a private
 // function only implementable by structures within the same package, creating
@@ -42,7 +42,8 @@ type Question struct {
 }
 type SubQuestion interface{ subQuestion() }
 
-// --- QuestionType: Choice Question ----------------------------------------
+// ---------------------------------------------------
+// --- QuestionType: Choice Question -----------------
 
 type ChoiceQuestion struct {
 	store.ChoiceQuestion `mapstructure:",squash"`
@@ -51,7 +52,8 @@ type ChoiceQuestion struct {
 
 func (q *ChoiceQuestion) subQuestion() {}
 
-// --- QuestionType: Text Question ------------------------------------------
+// ---------------------------------------------------
+// --- QuestionType: Text Question -------------------
 
 type TextQuestion struct {
 	store.TextQuestion `mapstructure:",squash"`
@@ -59,9 +61,9 @@ type TextQuestion struct {
 
 func (q *TextQuestion) subQuestion() {}
 
-// --------------------------------------------------------------------------
-// --- QUESTIONS : Handling Conversions -------------------------------------
-// --------------------------------------------------------------------------
+// ---------------------------------------------------------------
+// --- QUESTIONS : Handling Conversions --------------------------
+// ---------------------------------------------------------------
 
 // Thanks to Composition, Marshal functions are not necessary as whatever
 // is converting the Go type to the target data does not need to know what
@@ -76,7 +78,8 @@ func (q *TextQuestion) subQuestion() {}
 // can be done by switching Question.SubQuestion.(type) and using the concrete
 // types as switch cases.
 
-// --- json.Unmarshal -------------------------------------------------------
+// ---------------------------------------------------
+// --- json.Unmarshal --------------------------------
 
 func (q *Question) UnmarshalJSON(data []byte) error {
 
@@ -103,7 +106,8 @@ func (q *Question) UnmarshalJSON(data []byte) error {
 	return json.Unmarshal(raw.SubQuestion, q.SubQuestion)
 }
 
-// --- mapstructure.Decode --------------------------------------------------
+// ---------------------------------------------------
+// --- mapstructure.Decode ---------------------------
 
 func (q *Question) UnmarshalMapstructure(data any) error {
 

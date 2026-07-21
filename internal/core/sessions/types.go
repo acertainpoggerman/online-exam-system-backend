@@ -4,6 +4,7 @@ import (
 	"math/rand/v2"
 
 	store "github.com/acertainpoggerman/online-exam-system/internal/adapters/postgresql/sqlc"
+	"github.com/acertainpoggerman/online-exam-system/internal/core/scripts"
 	"github.com/google/uuid"
 )
 

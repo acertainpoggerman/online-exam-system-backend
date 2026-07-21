@@ -13,7 +13,9 @@ import (
 	"github.com/acertainpoggerman/online-exam-system/internal/core/scripts"
 	"github.com/acertainpoggerman/online-exam-system/internal/json"
 	"github.com/google/uuid"
+	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -22,9 +24,6 @@ type SessionService interface {
 	FindSessionByID(ctx context.Context, user store.User, sessionID uuid.UUID) (Session, error)
 	FindSessions(ctx context.Context, user store.User, cursor *api.Cursor, size int32, search string, status store.SessionStatus) ([]Session, int64, error)
 	UpdateSessionByID(ctx context.Context, user store.User, sessionID uuid.UUID, data CreateSessionBody) (Session, error)
-
-	EnrolWithCode(ctx context.Context, user store.User, joinCode string) (submissions.Submission, error)
-	SubmitForSession(ctx context.Context, user store.User, sessionID uuid.UUID) error
 
 	OpenSession(ctx context.Context, user store.User, sessionID uuid.UUID) error
 	CloseSession(ctx context.Context, user store.User, sessionID uuid.UUID) error

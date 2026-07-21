@@ -233,7 +233,7 @@ func (h *Hub) Unregister(client *Client, onGraceExpired func()) {
 	// Will run onGraceExpired if the client does not call Register()
 	// after the grace period.
 
-	gracePeriod := 2 * time.Minute
+	gracePeriod := 3 * time.Minute
 	if onGraceExpired != nil {
 		member.graceTimer = time.AfterFunc(gracePeriod, onGraceExpired)
 	}
