@@ -7,9 +7,91 @@ package store
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 )
+
+const debugGetCount = `-- name: DebugGetCount :one
+
+SELECT count(*) AS value FROM
+    submissions s JOIN submission_questions sq ON s.id = sq.submission_id
+WHERE
+        s.session_id = $1::uuid
+    AND s.examinee_id = $2::uuid
+    AND sq.mark IS NULL
+`
+
+type DebugGetCountParams struct {
+	SessionID  uuid.UUID `json:"session_id"`
+	ExamineeID uuid.UUID `json:"examinee_id"`
+}
+
+func (q *Queries) DebugGetCount(ctx context.Context, arg DebugGetCountParams) (int64, error) {
+	row := q.db.QueryRow(ctx, debugGetCount, arg.SessionID, arg.ExamineeID)
+	var value int64
+	err := row.Scan(&value)
+	return value, err
+}
+
+const debugGetQuestionResponses = `-- name: DebugGetQuestionResponses :many
+SELECT sq.mark, sq.feedback FROM
+    submissions s JOIN submission_questions sq ON sq.submission_id = s.id
+WHERE
+        s.session_id = $1::uuid
+    AND s.examinee_id = $2::uuid
+`
+
+type DebugGetQuestionResponsesParams struct {
+	SessionID  uuid.UUID `json:"session_id"`
+	ExamineeID uuid.UUID `json:"examinee_id"`
+}
+
+type DebugGetQuestionResponsesRow struct {
+	Mark     *int32 `json:"mark,omitempty"`
+	Feedback string `json:"feedback,omitzero"`
+}
+
+func (q *Queries) DebugGetQuestionResponses(ctx context.Context, arg DebugGetQuestionResponsesParams) ([]DebugGetQuestionResponsesRow, error) {
+	rows, err := q.db.Query(ctx, debugGetQuestionResponses, arg.SessionID, arg.ExamineeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []DebugGetQuestionResponsesRow{}
+	for rows.Next() {
+		var i DebugGetQuestionResponsesRow
+		if err := rows.Scan(&i.Mark, &i.Feedback); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const debugGetStatus = `-- name: DebugGetStatus :one
+
+SELECT s.status FROM
+    submissions s JOIN submission_questions sq ON s.id = sq.submission_id
+WHERE
+        s.session_id = $1::uuid
+    AND s.examinee_id = $2::uuid
+`
+
+type DebugGetStatusParams struct {
+	SessionID  uuid.UUID `json:"session_id"`
+	ExamineeID uuid.UUID `json:"examinee_id"`
+}
+
+func (q *Queries) DebugGetStatus(ctx context.Context, arg DebugGetStatusParams) (SubmissionStatus, error) {
+	row := q.db.QueryRow(ctx, debugGetStatus, arg.SessionID, arg.ExamineeID)
+	var status SubmissionStatus
+	err := row.Scan(&status)
+	return status, err
+}
 
 const findConnectableSubmission = `-- name: FindConnectableSubmission :one
 
@@ -65,7 +147,7 @@ UPDATE submissions SET
 WHERE submissions.examinee_id = $1
     AND submissions.session_id = $2
     AND submissions.status IN ('editable')
-RETURNING id, mark, status, submitted_at, joined_at, examinee_id, session_id
+RETURNING id, status, submitted_at, joined_at, examinee_id, session_id
 `
 
 type SetSubmissionDisconnectedParams struct {
@@ -79,7 +161,6 @@ func (q *Queries) SetSubmissionDisconnected(ctx context.Context, arg SetSubmissi
 	var i Submission
 	err := row.Scan(
 		&i.ID,
-		&i.Mark,
 		&i.Status,
 		&i.SubmittedAt,
 		&i.JoinedAt,
@@ -96,7 +177,7 @@ UPDATE submissions SET
 WHERE submissions.examinee_id = $1
     AND submissions.session_id = $2
     AND submissions.status = 'flagged'
-RETURNING id, mark, status, submitted_at, joined_at, examinee_id, session_id
+RETURNING id, status, submitted_at, joined_at, examinee_id, session_id
 `
 
 type SetSubmissionDisconnectedFromFlaggedParams struct {
@@ -111,7 +192,6 @@ func (q *Queries) SetSubmissionDisconnectedFromFlagged(ctx context.Context, arg 
 	var i Submission
 	err := row.Scan(
 		&i.ID,
-		&i.Mark,
 		&i.Status,
 		&i.SubmittedAt,
 		&i.JoinedAt,
@@ -128,7 +208,7 @@ UPDATE submissions SET
 WHERE submissions.examinee_id = $1
 AND submissions.session_id = $2
 AND submissions.status = 'left'
-RETURNING id, mark, status, submitted_at, joined_at, examinee_id, session_id
+RETURNING id, status, submitted_at, joined_at, examinee_id, session_id
 `
 
 type SetSubmissionDisconnectedFromLeftParams struct {
@@ -143,7 +223,6 @@ func (q *Queries) SetSubmissionDisconnectedFromLeft(ctx context.Context, arg Set
 	var i Submission
 	err := row.Scan(
 		&i.ID,
-		&i.Mark,
 		&i.Status,
 		&i.SubmittedAt,
 		&i.JoinedAt,
@@ -160,7 +239,7 @@ UPDATE submissions SET
 WHERE submissions.examinee_id = $1
     AND submissions.session_id = $2
     AND submissions.status = 'disconnected'
-RETURNING id, mark, status, submitted_at, joined_at, examinee_id, session_id
+RETURNING id, status, submitted_at, joined_at, examinee_id, session_id
 `
 
 type SetSubmissionEditableFromDisconnectParams struct {
@@ -174,7 +253,6 @@ func (q *Queries) SetSubmissionEditableFromDisconnect(ctx context.Context, arg S
 	var i Submission
 	err := row.Scan(
 		&i.ID,
-		&i.Mark,
 		&i.Status,
 		&i.SubmittedAt,
 		&i.JoinedAt,
@@ -191,7 +269,7 @@ UPDATE submissions SET
 WHERE submissions.examinee_id = $1
     AND submissions.session_id = $2
     AND submissions.status = 'flagged'
-RETURNING id, mark, status, submitted_at, joined_at, examinee_id, session_id
+RETURNING id, status, submitted_at, joined_at, examinee_id, session_id
 `
 
 type SetSubmissionEditableFromFlaggedParams struct {
@@ -206,7 +284,6 @@ func (q *Queries) SetSubmissionEditableFromFlagged(ctx context.Context, arg SetS
 	var i Submission
 	err := row.Scan(
 		&i.ID,
-		&i.Mark,
 		&i.Status,
 		&i.SubmittedAt,
 		&i.JoinedAt,
@@ -223,7 +300,7 @@ UPDATE submissions SET
 WHERE submissions.examinee_id = $1
     AND submissions.session_id = $2
     AND submissions.status = 'disconnected'
-RETURNING id, mark, status, submitted_at, joined_at, examinee_id, session_id
+RETURNING id, status, submitted_at, joined_at, examinee_id, session_id
 `
 
 type SetSubmissionFlaggedFromDisconnectParams struct {
@@ -238,7 +315,6 @@ func (q *Queries) SetSubmissionFlaggedFromDisconnect(ctx context.Context, arg Se
 	var i Submission
 	err := row.Scan(
 		&i.ID,
-		&i.Mark,
 		&i.Status,
 		&i.SubmittedAt,
 		&i.JoinedAt,
@@ -255,7 +331,7 @@ UPDATE submissions SET
 WHERE submissions.examinee_id = $1
     AND submissions.session_id = $2
     AND submissions.status = 'editable'
-RETURNING id, mark, status, submitted_at, joined_at, examinee_id, session_id
+RETURNING id, status, submitted_at, joined_at, examinee_id, session_id
 `
 
 type SetSubmissionFlaggedFromEditableParams struct {
@@ -270,7 +346,6 @@ func (q *Queries) SetSubmissionFlaggedFromEditable(ctx context.Context, arg SetS
 	var i Submission
 	err := row.Scan(
 		&i.ID,
-		&i.Mark,
 		&i.Status,
 		&i.SubmittedAt,
 		&i.JoinedAt,
@@ -287,7 +362,7 @@ UPDATE submissions SET
 WHERE submissions.examinee_id = $1
     AND submissions.session_id = $2
     AND submissions.status IN ('enrolled', 'left')
-RETURNING id, mark, status, submitted_at, joined_at, examinee_id, session_id
+RETURNING id, status, submitted_at, joined_at, examinee_id, session_id
 `
 
 type SetSubmissionJoinedParams struct {
@@ -302,7 +377,6 @@ func (q *Queries) SetSubmissionJoined(ctx context.Context, arg SetSubmissionJoin
 	var i Submission
 	err := row.Scan(
 		&i.ID,
-		&i.Mark,
 		&i.Status,
 		&i.SubmittedAt,
 		&i.JoinedAt,
@@ -319,7 +393,7 @@ UPDATE submissions SET
 WHERE submissions.examinee_id = $1
     AND submissions.session_id = $2
     AND submissions.status = 'joined'
-RETURNING id, mark, status, submitted_at, joined_at, examinee_id, session_id
+RETURNING id, status, submitted_at, joined_at, examinee_id, session_id
 `
 
 type SetSubmissionLeftParams struct {
@@ -334,7 +408,6 @@ func (q *Queries) SetSubmissionLeft(ctx context.Context, arg SetSubmissionLeftPa
 	var i Submission
 	err := row.Scan(
 		&i.ID,
-		&i.Mark,
 		&i.Status,
 		&i.SubmittedAt,
 		&i.JoinedAt,
@@ -359,7 +432,7 @@ WHERE submissions.session_id = sessions.id
         (sessions.status = 'open' AND submissions.status IN ('enrolled', 'left'))
         OR (sessions.status = 'started' AND submissions.status = 'disconnected')
     )
-RETURNING submissions.id, submissions.mark, submissions.status, submissions.submitted_at, submissions.joined_at, submissions.examinee_id, submissions.session_id
+RETURNING submissions.id, submissions.status, submissions.submitted_at, submissions.joined_at, submissions.examinee_id, submissions.session_id
 `
 
 type SetSubmissionOnConnectParams struct {
@@ -377,7 +450,6 @@ func (q *Queries) SetSubmissionOnConnect(ctx context.Context, arg SetSubmissionO
 	var i Submission
 	err := row.Scan(
 		&i.ID,
-		&i.Mark,
 		&i.Status,
 		&i.SubmittedAt,
 		&i.JoinedAt,
@@ -402,7 +474,7 @@ WHERE submissions.session_id = sessions.id
         (sessions.status = 'open' AND submissions.status = 'joined')
         OR (sessions.status = 'started' AND submissions.status = 'editable')
     )
-RETURNING submissions.id, submissions.mark, submissions.status, submissions.submitted_at, submissions.joined_at, submissions.examinee_id, submissions.session_id
+RETURNING submissions.id, submissions.status, submissions.submitted_at, submissions.joined_at, submissions.examinee_id, submissions.session_id
 `
 
 type SetSubmissionOnDisconnectParams struct {
@@ -420,7 +492,115 @@ func (q *Queries) SetSubmissionOnDisconnect(ctx context.Context, arg SetSubmissi
 	var i Submission
 	err := row.Scan(
 		&i.ID,
-		&i.Mark,
+		&i.Status,
+		&i.SubmittedAt,
+		&i.JoinedAt,
+		&i.ExamineeID,
+		&i.SessionID,
+	)
+	return i, err
+}
+
+const setSubmissionStatusPostAutoMark = `-- name: SetSubmissionStatusPostAutoMark :one
+
+UPDATE submissions s SET
+
+    status = CASE
+        -- If there is a question yet to have a mark, set it as unreviewed
+        WHEN EXISTS (
+            SELECT 1 FROM submission_questions sq
+            WHERE sq.submission_id = s.id
+                AND sq.mark IS NULL
+        ) THEN 'unreviewed'::submission_status
+        -- If there is no question yet to have a mark, set as fully marked
+        ELSE 'marked'::submission_status
+    END
+
+WHERE
+        s.session_id = $1::uuid
+    AND s.examinee_id = $2::uuid
+    AND s.status = 'submitted'
+RETURNING id, status, submitted_at, joined_at, examinee_id, session_id
+`
+
+type SetSubmissionStatusPostAutoMarkParams struct {
+	SessionID  uuid.UUID `json:"session_id"`
+	ExamineeID uuid.UUID `json:"examinee_id"`
+}
+
+// Set the status of the submission post automatic marking.
+// If the submission still has questions yet to be marked, THEN
+// set it as UNREVIEWED.
+//
+// Should only be used after marking every individual question
+// that could be marked using AutoMarkQuestion().
+//
+// (SUBMITTED -> UNREVIEWED)    : len(questions.mark == NULL) >= 1
+// (SUBMITTED -> MARKED)        : len(questions.mark == NULL) == 0
+//
+// The examiner should handle manually marking questions for submissions
+// post automatic marking that still have unresolved questions.
+func (q *Queries) SetSubmissionStatusPostAutoMark(ctx context.Context, arg SetSubmissionStatusPostAutoMarkParams) (Submission, error) {
+	row := q.db.QueryRow(ctx, setSubmissionStatusPostAutoMark, arg.SessionID, arg.ExamineeID)
+	var i Submission
+	err := row.Scan(
+		&i.ID,
+		&i.Status,
+		&i.SubmittedAt,
+		&i.JoinedAt,
+		&i.ExamineeID,
+		&i.SessionID,
+	)
+	return i, err
+}
+
+const setSubmissionStatusPostManualMark = `-- name: SetSubmissionStatusPostManualMark :one
+
+WITH unmarked_count AS  (
+    SELECT count(*) AS value FROM
+        submissions s JOIN submission_questions sq ON s.id = sq.submission_id
+    WHERE
+            s.session_id = $1::uuid
+        AND s.examinee_id = $2::uuid
+        AND sq.mark IS NULL
+)
+UPDATE submissions s SET
+    status = 'marked'
+FROM unmarked_count uc
+WHERE
+        s.session_id = $1::uuid
+    AND s.examinee_id = $2::uuid
+    AND s.status = 'unreviewed'
+    AND uc.value = 0
+RETURNING value, id, status, submitted_at, joined_at, examinee_id, session_id
+`
+
+type SetSubmissionStatusPostManualMarkParams struct {
+	SessionID  uuid.UUID `json:"session_id"`
+	ExamineeID uuid.UUID `json:"examinee_id"`
+}
+
+type SetSubmissionStatusPostManualMarkRow struct {
+	Value       int64            `json:"value"`
+	ID          uuid.UUID        `json:"id"`
+	Status      SubmissionStatus `json:"status"`
+	SubmittedAt *time.Time       `json:"submitted_at"`
+	JoinedAt    time.Time        `json:"joined_at"`
+	ExamineeID  uuid.UUID        `json:"examinee_id"`
+	SessionID   uuid.UUID        `json:"session_id"`
+}
+
+// Will set the status only to marked if the count of
+// unmarked questions is 0. Should give error in application
+// layer if otherwise.
+//
+// (UNREVIEWED -> MARKED)
+func (q *Queries) SetSubmissionStatusPostManualMark(ctx context.Context, arg SetSubmissionStatusPostManualMarkParams) (SetSubmissionStatusPostManualMarkRow, error) {
+	row := q.db.QueryRow(ctx, setSubmissionStatusPostManualMark, arg.SessionID, arg.ExamineeID)
+	var i SetSubmissionStatusPostManualMarkRow
+	err := row.Scan(
+		&i.Value,
+		&i.ID,
 		&i.Status,
 		&i.SubmittedAt,
 		&i.JoinedAt,
@@ -469,7 +649,7 @@ UPDATE submissions SET
 WHERE submissions.examinee_id = $1
     AND submissions.session_id = $2
     AND submissions.status = 'editable'
-RETURNING id, mark, status, submitted_at, joined_at, examinee_id, session_id
+RETURNING id, status, submitted_at, joined_at, examinee_id, session_id
 `
 
 type SetSubmissionSubmittedParams struct {
@@ -483,7 +663,6 @@ func (q *Queries) SetSubmissionSubmitted(ctx context.Context, arg SetSubmissionS
 	var i Submission
 	err := row.Scan(
 		&i.ID,
-		&i.Mark,
 		&i.Status,
 		&i.SubmittedAt,
 		&i.JoinedAt,

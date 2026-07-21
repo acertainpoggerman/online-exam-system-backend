@@ -108,6 +108,7 @@ const (
 	SubmissionStatusDisconnected SubmissionStatus = "disconnected"
 	SubmissionStatusFlagged      SubmissionStatus = "flagged"
 	SubmissionStatusSubmitted    SubmissionStatus = "submitted"
+	SubmissionStatusUnreviewed   SubmissionStatus = "unreviewed"
 	SubmissionStatusMarked       SubmissionStatus = "marked"
 )
 
@@ -241,6 +242,7 @@ type Question struct {
 	Text      string       `json:"text"`
 	ImageUrl  *string      `json:"image_url" mapstructure:"image_url"`
 	Type      QuestionType `json:"type"`
+	Mark      *int32       `json:"mark"`
 	CreatedAt time.Time    `json:"-"`
 	ScriptID  uuid.UUID    `json:"-"`
 }
@@ -251,6 +253,7 @@ type Script struct {
 	Heading        string    `json:"heading"`
 	Description    string    `json:"description"`
 	Locked         *bool     `json:"locked"`
+	DefaultMark    int32     `json:"default_mark"`
 	CreatedAt      time.Time `json:"created_at"`
 	LastModifiedAt time.Time `json:"last_modified_at"`
 	CreatorID      uuid.UUID `json:"creator_id"`
@@ -260,7 +263,6 @@ type Session struct {
 	ID               uuid.UUID     `json:"id"`
 	Title            string        `json:"title"`
 	Status           SessionStatus `json:"status"`
-	QuestionCount    *int32        `json:"question_count"`
 	StartedAt        *time.Time    `json:"started_at"`
 	EndedAt          *time.Time    `json:"ended_at"`
 	JoinCode         string        `json:"join_code"`
@@ -272,7 +274,6 @@ type Session struct {
 
 type Submission struct {
 	ID          uuid.UUID        `json:"id"`
-	Mark        *int32           `json:"mark"`
 	Status      SubmissionStatus `json:"status"`
 	SubmittedAt *time.Time       `json:"submitted_at"`
 	JoinedAt    time.Time        `json:"joined_at"`
@@ -281,9 +282,10 @@ type Submission struct {
 }
 
 type SubmissionQuestion struct {
-	SubmissionID uuid.UUID `json:"submission_id"`
+	SubmissionID uuid.UUID `json:"-"`
 	QuestionID   uuid.UUID `json:"question_id"`
-	Mark         *int32    `json:"mark"`
+	Mark         *int32    `json:"mark,omitempty"`
+	Feedback     string    `json:"feedback,omitzero"`
 	CreatedAt    time.Time `json:"created_at"`
 }
 

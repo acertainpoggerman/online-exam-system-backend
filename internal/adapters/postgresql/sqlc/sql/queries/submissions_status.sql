@@ -237,3 +237,94 @@ WHERE submissions.examinee_id = $1
     AND submissions.session_id = $2
     AND submissions.status = 'editable'
 RETURNING *;
+
+
+
+
+
+
+-- Set the status of the submission post automatic marking.
+-- If the submission still has questions yet to be marked, THEN
+-- set it as UNREVIEWED.
+--
+-- Should only be used after marking every individual question
+-- that could be marked using AutoMarkQuestion().
+--
+-- (SUBMITTED -> UNREVIEWED)    : len(questions.mark == NULL) >= 1
+-- (SUBMITTED -> MARKED)        : len(questions.mark == NULL) == 0
+--
+-- The examiner should handle manually marking questions for submissions
+-- post automatic marking that still have unresolved questions.
+--
+-- name: SetSubmissionStatusPostAutoMark :one
+
+UPDATE submissions s SET
+
+    status = CASE
+        -- If there is a question yet to have a mark, set it as unreviewed
+        WHEN EXISTS (
+            SELECT 1 FROM submission_questions sq
+            WHERE sq.submission_id = s.id
+                AND sq.mark IS NULL
+        ) THEN 'unreviewed'::submission_status
+        -- If there is no question yet to have a mark, set as fully marked
+        ELSE 'marked'::submission_status
+    END
+
+WHERE
+        s.session_id = @session_id::uuid
+    AND s.examinee_id = @examinee_id::uuid
+    AND s.status = 'submitted'
+RETURNING *;
+
+
+-- Will set the status only to marked if the count of
+-- unmarked questions is 0. Should give error in application
+-- layer if otherwise.
+--
+-- (UNREVIEWED -> MARKED)
+--
+-- name: SetSubmissionStatusPostManualMark :one
+
+WITH unmarked_count AS  (
+    SELECT count(*) AS value FROM
+        submissions s JOIN submission_questions sq ON s.id = sq.submission_id
+    WHERE
+            s.session_id = @session_id::uuid
+        AND s.examinee_id = @examinee_id::uuid
+        AND sq.mark IS NULL
+)
+UPDATE submissions s SET
+    status = 'marked'
+FROM unmarked_count uc
+WHERE
+        s.session_id = @session_id::uuid
+    AND s.examinee_id = @examinee_id::uuid
+    AND s.status = 'unreviewed'
+    AND uc.value = 0
+RETURNING *;
+
+
+-- name: DebugGetQuestionResponses :many
+SELECT sq.mark, sq.feedback FROM
+    submissions s JOIN submission_questions sq ON sq.submission_id = s.id
+WHERE
+        s.session_id = @session_id::uuid
+    AND s.examinee_id = @examinee_id::uuid;
+
+-- name: DebugGetCount :one
+
+SELECT count(*) AS value FROM
+    submissions s JOIN submission_questions sq ON s.id = sq.submission_id
+WHERE
+        s.session_id = @session_id::uuid
+    AND s.examinee_id = @examinee_id::uuid
+    AND sq.mark IS NULL;
+
+-- name: DebugGetStatus :one
+
+SELECT s.status FROM
+    submissions s JOIN submission_questions sq ON s.id = sq.submission_id
+WHERE
+        s.session_id = @session_id::uuid
+    AND s.examinee_id = @examinee_id::uuid;

@@ -16,9 +16,10 @@ INSERT INTO scripts (
 -- name: UpdateScriptFields :one
 
 UPDATE scripts SET
-    title       = $2,
-    heading     = $3,
-    description = $4
+    title           = $2,
+    heading         = $3,
+    description     = $4,
+    default_mark    = $5
 WHERE scripts.id = $1
     AND scripts.locked = false
 RETURNING id;
@@ -57,7 +58,6 @@ WHERE
 ;
 
 
-
 -- Finds a script by its ID
 --
 -- name: FindScriptByID :one
@@ -72,3 +72,10 @@ SELECT scripts.* FROM
     scripts INNER JOIN sessions ON scripts.id = sessions.script_id
     INNER JOIN submissions ON submissions.session_id = sessions.id
 WHERE submissions.id = @submission_id::uuid LIMIT 1;
+
+--
+-- name: ScriptTotalMarks :one
+
+SELECT SUM(COALESCE(questions.mark, scripts.default_mark)) FROM
+    scripts INNER JOIN questions ON scripts.id = questions.script_id
+WHERE scripts.id = $1;

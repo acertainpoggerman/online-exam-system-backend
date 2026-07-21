@@ -68,3 +68,20 @@ END;
 $$;
 
 --------------------------------------------------------------------------------
+
+-- Gets the mark for the given question
+-- If the question has no mark, will get the default mark (from the script itself)
+
+CREATE OR REPLACE FUNCTION get_question_mark(p_question_id UUID)
+RETURNS INTEGER
+LANGUAGE plpgsql AS $$
+DECLARE
+    result INTEGER;
+BEGIN
+    SELECT COALESCE(q.mark, s.default_mark) INTO result FROM
+        questions q INNER JOIN scripts s ON s.id = q.script_id
+    WHERE q.id = p_question_id;
+
+    RETURN result;
+END
+$$;

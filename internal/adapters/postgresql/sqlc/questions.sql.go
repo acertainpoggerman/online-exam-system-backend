@@ -18,18 +18,19 @@ WITH inserted AS (
         script_id,
         type,
         text,
-        image_url
-    ) SELECT $4::uuid, 'choice', $1, $2 FROM scripts
-    WHERE scripts.id = $4::uuid
+        image_url,
+        mark
+    ) SELECT $5::uuid, 'choice', $1, $2, $3 FROM scripts
+    WHERE scripts.id = $5::uuid
         AND scripts.locked = false
-    RETURNING id, text, image_url, type, created_at, script_id
+    RETURNING id, text, image_url, type, mark, created_at, script_id
 )
 INSERT INTO choice_questions (
     id,
     is_multiple_choice
-) SELECT inserted.id, $3 FROM
+) SELECT inserted.id, $4 FROM
     inserted INNER JOIN scripts ON inserted.script_id = scripts.id
-WHERE scripts.id = $4::uuid
+WHERE scripts.id = $5::uuid
 AND scripts.locked = false
 RETURNING id
 `
@@ -37,6 +38,7 @@ RETURNING id
 type CreateChoiceQuestionParams struct {
 	Text             string    `json:"text"`
 	ImageUrl         *string   `json:"image_url" mapstructure:"image_url"`
+	Mark             *int32    `json:"mark"`
 	IsMultipleChoice bool      `json:"is_multiple_choice" mapstructure:"is_multiple_choice"`
 	ScriptID         uuid.UUID `json:"script_id"`
 }
@@ -48,6 +50,7 @@ func (q *Queries) CreateChoiceQuestion(ctx context.Context, arg CreateChoiceQues
 	row := q.db.QueryRow(ctx, createChoiceQuestion,
 		arg.Text,
 		arg.ImageUrl,
+		arg.Mark,
 		arg.IsMultipleChoice,
 		arg.ScriptID,
 	)
@@ -63,18 +66,19 @@ WITH inserted AS (
         script_id,
         type,
         text,
-        image_url
-    ) SELECT $4::uuid, 'text', $1, $2 FROM scripts
-    WHERE scripts.id = $4::uuid
+        image_url,
+        mark
+    ) SELECT $5::uuid, 'text', $1, $2, $4 FROM scripts
+    WHERE scripts.id = $5::uuid
         AND scripts.locked = false
-    RETURNING id, text, image_url, type, created_at, script_id
+    RETURNING id, text, image_url, type, mark, created_at, script_id
 )
 INSERT INTO text_questions (
     id,
     is_short_text
 ) SELECT inserted.id, $3 FROM
     inserted INNER JOIN scripts ON inserted.script_id = scripts.id
-WHERE scripts.id = $4::uuid
+WHERE scripts.id = $5::uuid
 AND scripts.locked = false
 RETURNING id
 `
@@ -83,6 +87,7 @@ type CreateTextQuestionParams struct {
 	Text        string    `json:"text"`
 	ImageUrl    *string   `json:"image_url" mapstructure:"image_url"`
 	IsShortText bool      `json:"is_short_text" mapstructure:"is_short_text"`
+	Mark        *int32    `json:"mark"`
 	ScriptID    uuid.UUID `json:"script_id"`
 }
 
@@ -94,6 +99,7 @@ func (q *Queries) CreateTextQuestion(ctx context.Context, arg CreateTextQuestion
 		arg.Text,
 		arg.ImageUrl,
 		arg.IsShortText,
+		arg.Mark,
 		arg.ScriptID,
 	)
 	var id uuid.UUID
@@ -232,7 +238,7 @@ func (q *Queries) FindOptionsForQuestionShuffled(ctx context.Context, questionID
 
 const findQuestionByID = `-- name: FindQuestionByID :one
 
-SELECT id, text, image_url, type, created_at, script_id FROM questions
+SELECT id, text, image_url, type, mark, created_at, script_id FROM questions
 WHERE questions.id = $1
 `
 
@@ -247,6 +253,7 @@ func (q *Queries) FindQuestionByID(ctx context.Context, id uuid.UUID) (Question,
 		&i.Text,
 		&i.ImageUrl,
 		&i.Type,
+		&i.Mark,
 		&i.CreatedAt,
 		&i.ScriptID,
 	)
@@ -255,7 +262,7 @@ func (q *Queries) FindQuestionByID(ctx context.Context, id uuid.UUID) (Question,
 
 const findQuestionsForScript = `-- name: FindQuestionsForScript :many
 
-SELECT questions.id, questions.text, questions.image_url, questions.type, questions.created_at, questions.script_id FROM
+SELECT questions.id, questions.text, questions.image_url, questions.type, questions.mark, questions.created_at, questions.script_id FROM
     scripts INNER JOIN questions on scripts.id = questions.script_id
 WHERE scripts.id = $1
 ORDER BY questions.created_at ASC
@@ -279,6 +286,7 @@ func (q *Queries) FindQuestionsForScript(ctx context.Context, id uuid.UUID) ([]Q
 			&i.Text,
 			&i.ImageUrl,
 			&i.Type,
+			&i.Mark,
 			&i.CreatedAt,
 			&i.ScriptID,
 		); err != nil {
@@ -294,7 +302,7 @@ func (q *Queries) FindQuestionsForScript(ctx context.Context, id uuid.UUID) ([]Q
 
 const findQuestionsForSubmission = `-- name: FindQuestionsForSubmission :many
 
-SELECT questions.id, questions.text, questions.image_url, questions.type, questions.created_at, questions.script_id FROM
+SELECT questions.id, questions.text, questions.image_url, questions.type, questions.mark, questions.created_at, questions.script_id FROM
     questions INNER JOIN submission_questions sq ON questions.id = sq.question_id
 WHERE sq.submission_id = $1
 ORDER BY sq.created_at DESC
@@ -318,6 +326,7 @@ func (q *Queries) FindQuestionsForSubmission(ctx context.Context, submissionID u
 			&i.Text,
 			&i.ImageUrl,
 			&i.Type,
+			&i.Mark,
 			&i.CreatedAt,
 			&i.ScriptID,
 		); err != nil {
@@ -413,7 +422,8 @@ const updateQuestionFields = `-- name: UpdateQuestionFields :exec
 
 UPDATE questions SET
     text        = $2,
-    image_url   = $3
+    image_url   = $3,
+    mark        = $4
 FROM scripts
 WHERE questions.id = $1
     AND scripts.id = questions.script_id
@@ -424,13 +434,19 @@ type UpdateQuestionFieldsParams struct {
 	ID       uuid.UUID `json:"id"`
 	Text     string    `json:"text"`
 	ImageUrl *string   `json:"image_url" mapstructure:"image_url"`
+	Mark     *int32    `json:"mark"`
 }
 
 // Updates the parent question fields if possible.
 //
 // ------------------------------------------------
 func (q *Queries) UpdateQuestionFields(ctx context.Context, arg UpdateQuestionFieldsParams) error {
-	_, err := q.db.Exec(ctx, updateQuestionFields, arg.ID, arg.Text, arg.ImageUrl)
+	_, err := q.db.Exec(ctx, updateQuestionFields,
+		arg.ID,
+		arg.Text,
+		arg.ImageUrl,
+		arg.Mark,
+	)
 	return err
 }
 

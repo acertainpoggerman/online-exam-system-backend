@@ -12,6 +12,45 @@ import (
 	"github.com/google/uuid"
 )
 
+const findProctorLogsForExaminee = `-- name: FindProctorLogsForExaminee :many
+SELECT id, type, occurred_at, received_at, session_id, examinee_id FROM proctor_events p
+WHERE p.session_id = $1
+    AND p.examinee_id = $2
+ORDER BY received_at DESC
+`
+
+type FindProctorLogsForExamineeParams struct {
+	SessionID  uuid.UUID `json:"session_id"`
+	ExamineeID uuid.UUID `json:"examinee_id"`
+}
+
+func (q *Queries) FindProctorLogsForExaminee(ctx context.Context, arg FindProctorLogsForExamineeParams) ([]ProctorEvent, error) {
+	rows, err := q.db.Query(ctx, findProctorLogsForExaminee, arg.SessionID, arg.ExamineeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ProctorEvent{}
+	for rows.Next() {
+		var i ProctorEvent
+		if err := rows.Scan(
+			&i.ID,
+			&i.Type,
+			&i.OccurredAt,
+			&i.ReceivedAt,
+			&i.SessionID,
+			&i.ExamineeID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const logProctorEvent = `-- name: LogProctorEvent :one
 INSERT INTO proctor_events (
     session_id,

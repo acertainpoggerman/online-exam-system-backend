@@ -48,6 +48,8 @@ CREATE TABLE scripts (
     description         VARCHAR(800) NOT NULL,
     locked              BOOLEAN DEFAULT FALSE,
 
+    default_mark    INTEGER NOT NULL DEFAULT 1 CHECK (default_mark >= 1),
+
     created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
     last_modified_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
 
@@ -83,6 +85,8 @@ CREATE TABLE questions (
     text        TEXT NOT NULL,
     image_url   TEXT,
     type        question_type NOT NULL,
+
+    mark    INTEGER DEFAULT NULL,
 
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
 
@@ -206,7 +210,6 @@ CREATE TABLE sessions (
     title   VARCHAR(200) NOT NULL,
     status  session_status NOT NULL DEFAULT 'closed',
 
-    question_count      INTEGER DEFAULT NULL,
     started_at          TIMESTAMPTZ DEFAULT NULL,
     ended_at            TIMESTAMPTZ DEFAULT NULL,
     join_code           VARCHAR(10) NOT NULL UNIQUE,
@@ -260,12 +263,12 @@ CREATE TYPE submission_status AS ENUM (
     'disconnected',
     'flagged',
     'submitted',
+    'unreviewed',
     'marked'
 );
 
 CREATE TABLE submissions (
     id      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    mark    INTEGER CHECK (mark >= 0),
     status  submission_status NOT NULL DEFAULT 'enrolled',
 
     submitted_at    TIMESTAMPTZ,
@@ -296,7 +299,9 @@ CREATE TABLE submission_questions (
     submission_id   UUID NOT NULL REFERENCES submissions(id) ON DELETE CASCADE,
     question_id     UUID NOT NULL REFERENCES questions(id) ON DELETE CASCADE,
 
-    mark        INTEGER CHECK (mark >= 0),
+    mark        INTEGER DEFAULT NULL CHECK (mark >= 0),
+    feedback    TEXT NOT NULL DEFAULT '',
+
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
 
     PRIMARY KEY (submission_id, question_id)

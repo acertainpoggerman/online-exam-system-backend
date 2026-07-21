@@ -11,34 +11,71 @@ import (
 	"github.com/google/uuid"
 )
 
-const calculateSubmisionMark = `-- name: CalculateSubmisionMark :one
+const autoMarkQuestion = `-- name: AutoMarkQuestion :one
 
-WITH total AS (
-    SELECT sum(sq.mark) AS mark FROM submission_questions sq
-    WHERE sq.submission_id = $1::uuid
+WITH key_count AS (
+    SELECT count(*) as value FROM answer_keys
+    WHERE answer_keys.question_id = $2::uuid
 )
-UPDATE submissions SET
-    mark    = total.mark,
-    status  = 'marked'
-FROM total
-WHERE submissions.id = $1::uuid
-    AND submissions.status = 'submitted'
-RETURNING total.mark
+UPDATE submission_questions sq SET
+    mark = CASE
+        WHEN $1::boolean = true THEN get_question_mark($2::uuid)
+        ELSE 0
+    END
+FROM submissions s, key_count kc
+WHERE
+        s.id = sq.submission_id
+    AND s.session_id = $3::uuid
+    AND s.examinee_id = $4::uuid
+    AND sq.question_id = $2::uuid
+
+    -- [X] Mark must be NULL prior
+    -- [X] Submission must have a SUBMITTED status
+    -- [X] Answer Key count is greater than 0
+
+    AND sq.mark IS NULL
+    AND s.status = 'submitted'
+    AND kc.value > 0
+
+RETURNING sq.submission_id, sq.question_id, sq.mark, sq.feedback, sq.created_at
 `
 
-// Calculates the mark for a submission based on
-// the individual marks for each question's answer.
-func (q *Queries) CalculateSubmisionMark(ctx context.Context, submissionID uuid.UUID) (int64, error) {
-	row := q.db.QueryRow(ctx, calculateSubmisionMark, submissionID)
-	var mark int64
-	err := row.Scan(&mark)
-	return mark, err
+type AutoMarkQuestionParams struct {
+	IsCorrect  bool      `json:"is_correct"`
+	QuestionID uuid.UUID `json:"question_id"`
+	SessionID  uuid.UUID `json:"session_id"`
+	ExamineeID uuid.UUID `json:"examinee_id"`
+}
+
+// Automatically gives a mark to the question. Will
+// only give the mark as 0, or the maximum mark based
+// on the application layer's is_correct value.
+//
+// If this fails for any of the questions, then the whole
+// thing should fail, meaning that post marking of these
+// questions,
+func (q *Queries) AutoMarkQuestion(ctx context.Context, arg AutoMarkQuestionParams) (SubmissionQuestion, error) {
+	row := q.db.QueryRow(ctx, autoMarkQuestion,
+		arg.IsCorrect,
+		arg.QuestionID,
+		arg.SessionID,
+		arg.ExamineeID,
+	)
+	var i SubmissionQuestion
+	err := row.Scan(
+		&i.SubmissionID,
+		&i.QuestionID,
+		&i.Mark,
+		&i.Feedback,
+		&i.CreatedAt,
+	)
+	return i, err
 }
 
 const createSubmission = `-- name: CreateSubmission :one
 INSERT INTO submissions (
     session_id, examinee_id
-) VALUES ($1, $2) RETURNING id, mark, status, submitted_at, joined_at, examinee_id, session_id
+) VALUES ($1, $2) RETURNING id, status, submitted_at, joined_at, examinee_id, session_id
 `
 
 type CreateSubmissionParams struct {
@@ -51,7 +88,6 @@ func (q *Queries) CreateSubmission(ctx context.Context, arg CreateSubmissionPara
 	var i Submission
 	err := row.Scan(
 		&i.ID,
-		&i.Mark,
 		&i.Status,
 		&i.SubmittedAt,
 		&i.JoinedAt,
@@ -61,29 +97,117 @@ func (q *Queries) CreateSubmission(ctx context.Context, arg CreateSubmissionPara
 	return i, err
 }
 
+const examineeFindSubmitted = `-- name: ExamineeFindSubmitted :many
+SELECT id, status, submitted_at, joined_at, examinee_id, session_id FROM submissions s
+WHERE s.examinee_id = $1
+    AND s.status IN ('submitted', 'unreviewed', 'marked')
+ORDER BY s.joined_at DESC
+`
+
+func (q *Queries) ExamineeFindSubmitted(ctx context.Context, examineeID uuid.UUID) ([]Submission, error) {
+	rows, err := q.db.Query(ctx, examineeFindSubmitted, examineeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Submission{}
+	for rows.Next() {
+		var i Submission
+		if err := rows.Scan(
+			&i.ID,
+			&i.Status,
+			&i.SubmittedAt,
+			&i.JoinedAt,
+			&i.ExamineeID,
+			&i.SessionID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const examinerMarkQuestion = `-- name: ExaminerMarkQuestion :exec
+
+WITH key_count AS (
+    SELECT count(*) as value FROM answer_keys
+    WHERE answer_keys.question_id = $2::uuid
+)
+UPDATE submission_questions sq SET
+    mark        = greatest(0, least($1::integer, get_question_mark($2::uuid))),
+    feedback    = $3::text
+FROM submissions s, key_count kc
+WHERE
+        s.id = sq.submission_id
+    AND s.session_id = $4::uuid
+    AND s.examinee_id = $5::uuid
+    AND sq.question_id = $2::uuid
+
+    -- [X] Mark must be NULL prior
+    -- [X] Submission must have an UNREVIEWED status
+    -- [X] Answer Key count is equal to 0
+
+    AND sq.mark IS NULL
+    AND s.status = 'unreviewed'
+    AND kc.value = 0
+
+RETURNING sq.submission_id, sq.question_id, sq.mark, sq.feedback, sq.created_at
+`
+
+type ExaminerMarkQuestionParams struct {
+	Mark       int32     `json:"mark"`
+	QuestionID uuid.UUID `json:"question_id"`
+	Feedback   string    `json:"feedback"`
+	SessionID  uuid.UUID `json:"session_id"`
+	ExamineeID uuid.UUID `json:"examinee_id"`
+}
+
+// Sets the mark manually for an individual question.
+// Should clamp the mark to (0, get_question_mark(question_id))
+func (q *Queries) ExaminerMarkQuestion(ctx context.Context, arg ExaminerMarkQuestionParams) error {
+	_, err := q.db.Exec(ctx, examinerMarkQuestion,
+		arg.Mark,
+		arg.QuestionID,
+		arg.Feedback,
+		arg.SessionID,
+		arg.ExamineeID,
+	)
+	return err
+}
+
 const findSubmissionAnswers = `-- name: FindSubmissionAnswers :many
 
 SELECT
-    sq.question_id,
+    sq.submission_id, sq.question_id, sq.mark, sq.feedback, sq.created_at,
     coalesce(array_agg(answer_values.value) FILTER (WHERE answer_values.value IS NOT NULL), '{}')::text[] as value
 FROM
-    submissions INNER JOIN submission_questions sq ON sq.submission_id = submissions.id
+    submissions s INNER JOIN submission_questions sq ON sq.submission_id = s.id
     LEFT JOIN answer_values
         ON sq.question_id = answer_values.question_id
         AND sq.submission_id = answer_values.submission_id
-WHERE submissions.id = $1
-GROUP BY sq.question_id, sq.created_at
+WHERE s.session_id = $1
+    AND s.examinee_id = $2
+GROUP BY sq.submission_id, sq.question_id, sq.created_at
 ORDER BY sq.created_at ASC
 `
 
+type FindSubmissionAnswersParams struct {
+	SessionID  uuid.UUID `json:"session_id"`
+	ExamineeID uuid.UUID `json:"examinee_id"`
+}
+
 type FindSubmissionAnswersRow struct {
-	QuestionID uuid.UUID `json:"question_id"`
-	Value      []string  `json:"value"`
+	SubmissionQuestion SubmissionQuestion `json:"submission_question"`
+	Value              []string           `json:"value"`
 }
 
 // Gets the answers for a submission
-func (q *Queries) FindSubmissionAnswers(ctx context.Context, id uuid.UUID) ([]FindSubmissionAnswersRow, error) {
-	rows, err := q.db.Query(ctx, findSubmissionAnswers, id)
+func (q *Queries) FindSubmissionAnswers(ctx context.Context, arg FindSubmissionAnswersParams) ([]FindSubmissionAnswersRow, error) {
+	rows, err := q.db.Query(ctx, findSubmissionAnswers, arg.SessionID, arg.ExamineeID)
 	if err != nil {
 		return nil, err
 	}
@@ -91,7 +215,14 @@ func (q *Queries) FindSubmissionAnswers(ctx context.Context, id uuid.UUID) ([]Fi
 	items := []FindSubmissionAnswersRow{}
 	for rows.Next() {
 		var i FindSubmissionAnswersRow
-		if err := rows.Scan(&i.QuestionID, &i.Value); err != nil {
+		if err := rows.Scan(
+			&i.SubmissionQuestion.SubmissionID,
+			&i.SubmissionQuestion.QuestionID,
+			&i.SubmissionQuestion.Mark,
+			&i.SubmissionQuestion.Feedback,
+			&i.SubmissionQuestion.CreatedAt,
+			&i.Value,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -103,15 +234,24 @@ func (q *Queries) FindSubmissionAnswers(ctx context.Context, id uuid.UUID) ([]Fi
 }
 
 const findSubmissionByID = `-- name: FindSubmissionByID :one
-SELECT id, mark, status, submitted_at, joined_at, examinee_id, session_id FROM submissions WHERE submissions.id = $1
+
+SELECT id, status, submitted_at, joined_at, examinee_id, session_id FROM submissions s
+WHERE s.session_id = $1::uuid
+    AND s.examinee_id = $2::uuid
+LIMIT 1
 `
 
-func (q *Queries) FindSubmissionByID(ctx context.Context, id uuid.UUID) (Submission, error) {
-	row := q.db.QueryRow(ctx, findSubmissionByID, id)
+type FindSubmissionByIDParams struct {
+	SessionID  uuid.UUID `json:"session_id"`
+	ExamineeID uuid.UUID `json:"examinee_id"`
+}
+
+// Find submission with matching session ID and examinee ID.
+func (q *Queries) FindSubmissionByID(ctx context.Context, arg FindSubmissionByIDParams) (Submission, error) {
+	row := q.db.QueryRow(ctx, findSubmissionByID, arg.SessionID, arg.ExamineeID)
 	var i Submission
 	err := row.Scan(
 		&i.ID,
-		&i.Mark,
 		&i.Status,
 		&i.SubmittedAt,
 		&i.JoinedAt,
@@ -122,7 +262,7 @@ func (q *Queries) FindSubmissionByID(ctx context.Context, id uuid.UUID) (Submiss
 }
 
 const findSubmissionsForSession = `-- name: FindSubmissionsForSession :many
-SELECT id, mark, status, submitted_at, joined_at, examinee_id, session_id FROM submissions WHERE submissions.session_id = $1
+SELECT id, status, submitted_at, joined_at, examinee_id, session_id FROM submissions WHERE submissions.session_id = $1
 `
 
 func (q *Queries) FindSubmissionsForSession(ctx context.Context, sessionID uuid.UUID) ([]Submission, error) {
@@ -136,7 +276,6 @@ func (q *Queries) FindSubmissionsForSession(ctx context.Context, sessionID uuid.
 		var i Submission
 		if err := rows.Scan(
 			&i.ID,
-			&i.Mark,
 			&i.Status,
 			&i.SubmittedAt,
 			&i.JoinedAt,
@@ -154,7 +293,8 @@ func (q *Queries) FindSubmissionsForSession(ctx context.Context, sessionID uuid.
 }
 
 const findSubmssionsForSessionWithUser = `-- name: FindSubmssionsForSessionWithUser :many
-SELECT submissions.id, submissions.mark, submissions.status, submissions.submitted_at, submissions.joined_at, submissions.examinee_id, submissions.session_id, users.id, users.email, users.first_name, users.last_name, users.password_hash, users.role FROM
+
+SELECT submissions.id, submissions.status, submissions.submitted_at, submissions.joined_at, submissions.examinee_id, submissions.session_id, users.id, users.email, users.first_name, users.last_name, users.password_hash, users.role FROM
     submissions INNER JOIN users ON submissions.examinee_id = users.id
 WHERE submissions.session_id = $1
 `
@@ -175,7 +315,6 @@ func (q *Queries) FindSubmssionsForSessionWithUser(ctx context.Context, sessionI
 		var i FindSubmssionsForSessionWithUserRow
 		if err := rows.Scan(
 			&i.Submission.ID,
-			&i.Submission.Mark,
 			&i.Submission.Status,
 			&i.Submission.SubmittedAt,
 			&i.Submission.JoinedAt,
@@ -198,7 +337,19 @@ func (q *Queries) FindSubmssionsForSessionWithUser(ctx context.Context, sessionI
 	return items, nil
 }
 
-const replaceSubAnswerForQuestion = `-- name: ReplaceSubAnswerForQuestion :exec
+const getQuestionMark = `-- name: GetQuestionMark :one
+
+SELECT get_question_mark($1::uuid)::integer
+`
+
+func (q *Queries) GetQuestionMark(ctx context.Context, questionID uuid.UUID) (int32, error) {
+	row := q.db.QueryRow(ctx, getQuestionMark, questionID)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const replaceAnswerForQuestion = `-- name: ReplaceAnswerForQuestion :exec
 
 WITH deleted AS (
     DELETE FROM answer_values
@@ -218,15 +369,15 @@ WHERE submissions.id = $1
     AND sessions.status = 'started'
 `
 
-type ReplaceSubAnswerForQuestionParams struct {
+type ReplaceAnswerForQuestionParams struct {
 	SubmissionID uuid.UUID `json:"submission_id"`
 	QuestionID   uuid.UUID `json:"question_id"`
 	Value        []string  `json:"value"`
 }
 
 // Replaces the submission answer for a given question
-func (q *Queries) ReplaceSubAnswerForQuestion(ctx context.Context, arg ReplaceSubAnswerForQuestionParams) error {
-	_, err := q.db.Exec(ctx, replaceSubAnswerForQuestion, arg.SubmissionID, arg.QuestionID, arg.Value)
+func (q *Queries) ReplaceAnswerForQuestion(ctx context.Context, arg ReplaceAnswerForQuestionParams) error {
+	_, err := q.db.Exec(ctx, replaceAnswerForQuestion, arg.SubmissionID, arg.QuestionID, arg.Value)
 	return err
 }
 
@@ -254,34 +405,29 @@ func (q *Queries) SetQuestionsForSubmissions(ctx context.Context, sessionID uuid
 	return err
 }
 
-const setSubmissionQuestionMark = `-- name: SetSubmissionQuestionMark :one
-
-UPDATE submission_questions SET
-    mark = $3::integer
-FROM submissions
-WHERE submission_questions.submission_id = $1
-    AND submission_questions.question_id = $2
-    AND submissions.id = submission_questions.submission_id
-    AND submissions.status = 'submitted'
-RETURNING submission_questions.submission_id, submission_questions.question_id, submission_questions.mark, submission_questions.created_at
+const submissionMarks = `-- name: SubmissionMarks :one
+SELECT sum(sq.mark) as lhs, sum(get_question_mark(sq.question_id)) as rhs FROM
+    submission_questions sq JOIN submissions s ON sq.submission_id = s.id
+WHERE
+        s.session_id = $1
+    AND s.examinee_id = $2
+    AND s.status = 'marked'
+LIMIT 1
 `
 
-type SetSubmissionQuestionMarkParams struct {
-	SubmissionID uuid.UUID `json:"submission_id"`
-	QuestionID   uuid.UUID `json:"question_id"`
-	Mark         int32     `json:"mark"`
+type SubmissionMarksParams struct {
+	SessionID  uuid.UUID `json:"session_id"`
+	ExamineeID uuid.UUID `json:"examinee_id"`
 }
 
-// Updates the mark for an answer to a question in
-// a submission. Can only update a submitted submission
-func (q *Queries) SetSubmissionQuestionMark(ctx context.Context, arg SetSubmissionQuestionMarkParams) (SubmissionQuestion, error) {
-	row := q.db.QueryRow(ctx, setSubmissionQuestionMark, arg.SubmissionID, arg.QuestionID, arg.Mark)
-	var i SubmissionQuestion
-	err := row.Scan(
-		&i.SubmissionID,
-		&i.QuestionID,
-		&i.Mark,
-		&i.CreatedAt,
-	)
+type SubmissionMarksRow struct {
+	Lhs int64 `json:"lhs"`
+	Rhs int64 `json:"rhs"`
+}
+
+func (q *Queries) SubmissionMarks(ctx context.Context, arg SubmissionMarksParams) (SubmissionMarksRow, error) {
+	row := q.db.QueryRow(ctx, submissionMarks, arg.SessionID, arg.ExamineeID)
+	var i SubmissionMarksRow
+	err := row.Scan(&i.Lhs, &i.Rhs)
 	return i, err
 }

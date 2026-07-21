@@ -11,10 +11,15 @@ import (
 )
 
 type Querier interface {
-	// Calculates the mark for a submission based on
-	// the individual marks for each question's answer.
+	// Automatically gives a mark to the question. Will
+	// only give the mark as 0, or the maximum mark based
+	// on the application layer's is_correct value.
 	//
-	CalculateSubmisionMark(ctx context.Context, submissionID uuid.UUID) (int64, error)
+	// If this fails for any of the questions, then the whole
+	// thing should fail, meaning that post marking of these
+	// questions,
+	//
+	AutoMarkQuestion(ctx context.Context, arg AutoMarkQuestionParams) (SubmissionQuestion, error)
 	// Puts the session in CLOSED mode (default mode). While in
 	// CLOSED mode, examinees cannot join the session. Only
 	// sessions in OPEN mode can be closed.
@@ -44,6 +49,9 @@ type Querier interface {
 	//
 	//----------------------------
 	CreateTextQuestion(ctx context.Context, arg CreateTextQuestionParams) (uuid.UUID, error)
+	DebugGetCount(ctx context.Context, arg DebugGetCountParams) (int64, error)
+	DebugGetQuestionResponses(ctx context.Context, arg DebugGetQuestionResponsesParams) ([]DebugGetQuestionResponsesRow, error)
+	DebugGetStatus(ctx context.Context, arg DebugGetStatusParams) (SubmissionStatus, error)
 	// Deletes the question if possible.
 	// cascades to child components (e.g. subquestions & options)
 	//
@@ -59,6 +67,11 @@ type Querier interface {
 	// mode can be started.
 	//
 	EndSession(ctx context.Context, id uuid.UUID) (Session, error)
+	ExamineeFindSubmitted(ctx context.Context, examineeID uuid.UUID) ([]Submission, error)
+	// Sets the mark manually for an individual question.
+	// Should clamp the mark to (0, get_question_mark(question_id))
+	//
+	ExaminerMarkQuestion(ctx context.Context, arg ExaminerMarkQuestionParams) error
 	// Finds the answer key for a question as a list
 	//
 	//----------------------------------------------
@@ -82,6 +95,7 @@ type Querier interface {
 	//
 	//--------------------------------------------------------
 	FindOptionsForQuestionShuffled(ctx context.Context, questionID uuid.UUID) ([]Option, error)
+	FindProctorLogsForExaminee(ctx context.Context, arg FindProctorLogsForExamineeParams) ([]ProctorEvent, error)
 	// Gets a single question
 	//
 	//-----------------------
@@ -120,20 +134,27 @@ type Querier interface {
 	FindSessionsForExaminer(ctx context.Context, arg FindSessionsForExaminerParams) ([]Session, error)
 	// Gets the answers for a submission
 	//
-	FindSubmissionAnswers(ctx context.Context, id uuid.UUID) ([]FindSubmissionAnswersRow, error)
-	FindSubmissionByID(ctx context.Context, id uuid.UUID) (Submission, error)
+	FindSubmissionAnswers(ctx context.Context, arg FindSubmissionAnswersParams) ([]FindSubmissionAnswersRow, error)
+	// Find submission with matching session ID and examinee ID.
+	//
+	FindSubmissionByID(ctx context.Context, arg FindSubmissionByIDParams) (Submission, error)
 	FindSubmissionStatus(ctx context.Context, arg FindSubmissionStatusParams) (SubmissionStatus, error)
 	FindSubmissionsForSession(ctx context.Context, sessionID uuid.UUID) ([]Submission, error)
+	//
 	FindSubmssionsForSessionWithUser(ctx context.Context, sessionID uuid.UUID) ([]FindSubmssionsForSessionWithUserRow, error)
 	FindTextQuestionByID(ctx context.Context, id uuid.UUID) (TextQuestion, error)
 	FindUserByEmail(ctx context.Context, email string) (User, error)
 	FindUserByID(ctx context.Context, id uuid.UUID) (User, error)
+	GetQuestionMark(ctx context.Context, questionID uuid.UUID) (int32, error)
 	LogProctorEvent(ctx context.Context, arg LogProctorEventParams) (uuid.UUID, error)
 	// Puts the session in OPEN mode. While in OPEN mode
 	// examinees can join the session. Only sessions in
 	// CLOSED mode can be opened.
 	//
 	OpenSession(ctx context.Context, id uuid.UUID) (Session, error)
+	// Replaces the submission answer for a given question
+	//
+	ReplaceAnswerForQuestion(ctx context.Context, arg ReplaceAnswerForQuestionParams) error
 	// Fully replace all answer key values for the
 	// question with the given ID
 	//
@@ -146,9 +167,8 @@ type Querier interface {
 	//
 	//---------------------------------------------------------
 	ReplaceOptionsForQuestion(ctx context.Context, arg ReplaceOptionsForQuestionParams) error
-	// Replaces the submission answer for a given question
 	//
-	ReplaceSubAnswerForQuestion(ctx context.Context, arg ReplaceSubAnswerForQuestionParams) error
+	ScriptTotalMarks(ctx context.Context, id uuid.UUID) (int64, error)
 	// Sets the questions for the submission of a user. Intended to
 	// be used after an examiner starts the exam session before
 	// submissions are set as EDITABLE for examinees to answer
@@ -202,10 +222,27 @@ type Querier interface {
 	// submission: (EDITABLE)   sesssion: STARTED   -> DISCONNECTED
 	//
 	SetSubmissionOnDisconnect(ctx context.Context, arg SetSubmissionOnDisconnectParams) (Submission, error)
-	// Updates the mark for an answer to a question in
-	// a submission. Can only update a submitted submission
+	// Set the status of the submission post automatic marking.
+	// If the submission still has questions yet to be marked, THEN
+	// set it as UNREVIEWED.
 	//
-	SetSubmissionQuestionMark(ctx context.Context, arg SetSubmissionQuestionMarkParams) (SubmissionQuestion, error)
+	// Should only be used after marking every individual question
+	// that could be marked using AutoMarkQuestion().
+	//
+	// (SUBMITTED -> UNREVIEWED)    : len(questions.mark == NULL) >= 1
+	// (SUBMITTED -> MARKED)        : len(questions.mark == NULL) == 0
+	//
+	// The examiner should handle manually marking questions for submissions
+	// post automatic marking that still have unresolved questions.
+	//
+	SetSubmissionStatusPostAutoMark(ctx context.Context, arg SetSubmissionStatusPostAutoMarkParams) (Submission, error)
+	// Will set the status only to marked if the count of
+	// unmarked questions is 0. Should give error in application
+	// layer if otherwise.
+	//
+	// (UNREVIEWED -> MARKED)
+	//
+	SetSubmissionStatusPostManualMark(ctx context.Context, arg SetSubmissionStatusPostManualMarkParams) (SetSubmissionStatusPostManualMarkRow, error)
 	// On session start: promote waiting-room examinees and lock out no-shows.
 	// Use after the session is STARTED and submission questions are assigned.
 	//
@@ -223,6 +260,7 @@ type Querier interface {
 	// mode can be started.
 	//
 	StartSession(ctx context.Context, id uuid.UUID) (StartSessionRow, error)
+	SubmissionMarks(ctx context.Context, arg SubmissionMarksParams) (SubmissionMarksRow, error)
 	// On session end: auto-submit all in-progress submissions for the session.
 	// Updates LEFT, EDITABLE, DISCONNECTED, and FLAGGED to SUBMITTED.
 	//

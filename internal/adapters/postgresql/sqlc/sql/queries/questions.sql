@@ -8,8 +8,9 @@ WITH inserted AS (
         script_id,
         type,
         text,
-        image_url
-    ) SELECT @script_id::uuid, 'choice', $1, $2 FROM scripts
+        image_url,
+        mark
+    ) SELECT @script_id::uuid, 'choice', $1, $2, $3 FROM scripts
     WHERE scripts.id = @script_id::uuid
         AND scripts.locked = false
     RETURNING *
@@ -17,7 +18,7 @@ WITH inserted AS (
 INSERT INTO choice_questions (
     id,
     is_multiple_choice
-) SELECT inserted.id, $3 FROM
+) SELECT inserted.id, $4 FROM
     inserted INNER JOIN scripts ON inserted.script_id = scripts.id
 WHERE scripts.id = @script_id::uuid
 AND scripts.locked = false
@@ -34,8 +35,9 @@ WITH inserted AS (
         script_id,
         type,
         text,
-        image_url
-    ) SELECT @script_id::uuid, 'text', $1, $2 FROM scripts
+        image_url,
+        mark
+    ) SELECT @script_id::uuid, 'text', $1, $2, $4 FROM scripts
     WHERE scripts.id = @script_id::uuid
         AND scripts.locked = false
     RETURNING *
@@ -92,7 +94,8 @@ WHERE answer_keys.question_id = $1;
 
 UPDATE questions SET
     text        = $2,
-    image_url   = $3
+    image_url   = $3,
+    mark        = $4
 FROM scripts
 WHERE questions.id = $1
     AND scripts.id = questions.script_id

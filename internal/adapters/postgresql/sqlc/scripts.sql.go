@@ -19,7 +19,7 @@ INSERT INTO scripts (
     heading,
     description,
     creator_id
-) VALUES ($1, $2, $3, $4) RETURNING id, title, heading, description, locked, created_at, last_modified_at, creator_id
+) VALUES ($1, $2, $3, $4) RETURNING id, title, heading, description, locked, default_mark, created_at, last_modified_at, creator_id
 `
 
 type CreateScriptParams struct {
@@ -44,6 +44,7 @@ func (q *Queries) CreateScript(ctx context.Context, arg CreateScriptParams) (Scr
 		&i.Heading,
 		&i.Description,
 		&i.Locked,
+		&i.DefaultMark,
 		&i.CreatedAt,
 		&i.LastModifiedAt,
 		&i.CreatorID,
@@ -66,7 +67,7 @@ func (q *Queries) DeleteScript(ctx context.Context, id uuid.UUID) error {
 
 const findScriptByID = `-- name: FindScriptByID :one
 
-SELECT id, title, heading, description, locked, created_at, last_modified_at, creator_id FROM scripts
+SELECT id, title, heading, description, locked, default_mark, created_at, last_modified_at, creator_id FROM scripts
 WHERE scripts.id = $1
 `
 
@@ -80,6 +81,7 @@ func (q *Queries) FindScriptByID(ctx context.Context, id uuid.UUID) (Script, err
 		&i.Heading,
 		&i.Description,
 		&i.Locked,
+		&i.DefaultMark,
 		&i.CreatedAt,
 		&i.LastModifiedAt,
 		&i.CreatorID,
@@ -111,7 +113,7 @@ func (q *Queries) FindScriptCountForExaminer(ctx context.Context, arg FindScript
 
 const findScriptForSubmission = `-- name: FindScriptForSubmission :one
 
-SELECT scripts.id, scripts.title, scripts.heading, scripts.description, scripts.locked, scripts.created_at, scripts.last_modified_at, scripts.creator_id FROM
+SELECT scripts.id, scripts.title, scripts.heading, scripts.description, scripts.locked, scripts.default_mark, scripts.created_at, scripts.last_modified_at, scripts.creator_id FROM
     scripts INNER JOIN sessions ON scripts.id = sessions.script_id
     INNER JOIN submissions ON submissions.session_id = sessions.id
 WHERE submissions.id = $1::uuid LIMIT 1
@@ -126,6 +128,7 @@ func (q *Queries) FindScriptForSubmission(ctx context.Context, submissionID uuid
 		&i.Heading,
 		&i.Description,
 		&i.Locked,
+		&i.DefaultMark,
 		&i.CreatedAt,
 		&i.LastModifiedAt,
 		&i.CreatorID,
@@ -135,7 +138,7 @@ func (q *Queries) FindScriptForSubmission(ctx context.Context, submissionID uuid
 
 const findScriptsForExaminer = `-- name: FindScriptsForExaminer :many
 
-SELECT id, title, heading, description, locked, created_at, last_modified_at, creator_id FROM scripts
+SELECT id, title, heading, description, locked, default_mark, created_at, last_modified_at, creator_id FROM scripts
 WHERE scripts.creator_id = $1::UUID
     AND ($2::TEXT = '' OR scripts.title ILIKE '%' || $2::TEXT || '%')
     AND (scripts.last_modified_at, scripts.id) < ($3::TIMESTAMPTZ, $4::UUID)
@@ -174,6 +177,7 @@ func (q *Queries) FindScriptsForExaminer(ctx context.Context, arg FindScriptsFor
 			&i.Heading,
 			&i.Description,
 			&i.Locked,
+			&i.DefaultMark,
 			&i.CreatedAt,
 			&i.LastModifiedAt,
 			&i.CreatorID,
@@ -188,12 +192,27 @@ func (q *Queries) FindScriptsForExaminer(ctx context.Context, arg FindScriptsFor
 	return items, nil
 }
 
+const scriptTotalMarks = `-- name: ScriptTotalMarks :one
+
+SELECT SUM(COALESCE(questions.mark, scripts.default_mark)) FROM
+    scripts INNER JOIN questions ON scripts.id = questions.script_id
+WHERE scripts.id = $1
+`
+
+func (q *Queries) ScriptTotalMarks(ctx context.Context, id uuid.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, scriptTotalMarks, id)
+	var sum int64
+	err := row.Scan(&sum)
+	return sum, err
+}
+
 const updateScriptFields = `-- name: UpdateScriptFields :one
 
 UPDATE scripts SET
-    title       = $2,
-    heading     = $3,
-    description = $4
+    title           = $2,
+    heading         = $3,
+    description     = $4,
+    default_mark    = $5
 WHERE scripts.id = $1
     AND scripts.locked = false
 RETURNING id
@@ -204,6 +223,7 @@ type UpdateScriptFieldsParams struct {
 	Title       string    `json:"title"`
 	Heading     string    `json:"heading"`
 	Description string    `json:"description"`
+	DefaultMark int32     `json:"default_mark"`
 }
 
 // Updates the script if possible
@@ -213,6 +233,7 @@ func (q *Queries) UpdateScriptFields(ctx context.Context, arg UpdateScriptFields
 		arg.Title,
 		arg.Heading,
 		arg.Description,
+		arg.DefaultMark,
 	)
 	var id uuid.UUID
 	err := row.Scan(&id)
