@@ -54,6 +54,55 @@ func (ns NullQuestionType) Value() (driver.Value, error) {
 	return string(ns.QuestionType), nil
 }
 
+type ResponseStatus string
+
+const (
+	ResponseStatusEnrolled     ResponseStatus = "enrolled"
+	ResponseStatusJoined       ResponseStatus = "joined"
+	ResponseStatusLeft         ResponseStatus = "left"
+	ResponseStatusEditable     ResponseStatus = "editable"
+	ResponseStatusDisconnected ResponseStatus = "disconnected"
+	ResponseStatusFlagged      ResponseStatus = "flagged"
+	ResponseStatusSubmitted    ResponseStatus = "submitted"
+	ResponseStatusUnreviewed   ResponseStatus = "unreviewed"
+	ResponseStatusMarked       ResponseStatus = "marked"
+)
+
+func (e *ResponseStatus) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = ResponseStatus(s)
+	case string:
+		*e = ResponseStatus(s)
+	default:
+		return fmt.Errorf("unsupported scan type for ResponseStatus: %T", src)
+	}
+	return nil
+}
+
+type NullResponseStatus struct {
+	ResponseStatus ResponseStatus `json:"response_status"`
+	Valid          bool           `json:"valid"` // Valid is true if ResponseStatus is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullResponseStatus) Scan(value interface{}) error {
+	if value == nil {
+		ns.ResponseStatus, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.ResponseStatus.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullResponseStatus) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.ResponseStatus), nil
+}
+
 type SessionStatus string
 
 const (
@@ -96,55 +145,6 @@ func (ns NullSessionStatus) Value() (driver.Value, error) {
 		return nil, nil
 	}
 	return string(ns.SessionStatus), nil
-}
-
-type SubmissionStatus string
-
-const (
-	SubmissionStatusEnrolled     SubmissionStatus = "enrolled"
-	SubmissionStatusJoined       SubmissionStatus = "joined"
-	SubmissionStatusLeft         SubmissionStatus = "left"
-	SubmissionStatusEditable     SubmissionStatus = "editable"
-	SubmissionStatusDisconnected SubmissionStatus = "disconnected"
-	SubmissionStatusFlagged      SubmissionStatus = "flagged"
-	SubmissionStatusSubmitted    SubmissionStatus = "submitted"
-	SubmissionStatusUnreviewed   SubmissionStatus = "unreviewed"
-	SubmissionStatusMarked       SubmissionStatus = "marked"
-)
-
-func (e *SubmissionStatus) Scan(src interface{}) error {
-	switch s := src.(type) {
-	case []byte:
-		*e = SubmissionStatus(s)
-	case string:
-		*e = SubmissionStatus(s)
-	default:
-		return fmt.Errorf("unsupported scan type for SubmissionStatus: %T", src)
-	}
-	return nil
-}
-
-type NullSubmissionStatus struct {
-	SubmissionStatus SubmissionStatus `json:"submission_status"`
-	Valid            bool             `json:"valid"` // Valid is true if SubmissionStatus is not NULL
-}
-
-// Scan implements the Scanner interface.
-func (ns *NullSubmissionStatus) Scan(value interface{}) error {
-	if value == nil {
-		ns.SubmissionStatus, ns.Valid = "", false
-		return nil
-	}
-	ns.Valid = true
-	return ns.SubmissionStatus.Scan(value)
-}
-
-// Value implements the driver Valuer interface.
-func (ns NullSubmissionStatus) Value() (driver.Value, error) {
-	if !ns.Valid {
-		return nil, nil
-	}
-	return string(ns.SubmissionStatus), nil
 }
 
 type UserRole string
@@ -195,12 +195,6 @@ type AnswerKey struct {
 	QuestionID uuid.UUID `json:"-"`
 }
 
-type AnswerValue struct {
-	Value        string    `json:"value"`
-	SubmissionID uuid.UUID `json:"submission_id"`
-	QuestionID   uuid.UUID `json:"question_id"`
-}
-
 type ChoiceQuestion struct {
 	ID               uuid.UUID    `json:"-"`
 	IsMultipleChoice bool         `json:"is_multiple_choice" mapstructure:"is_multiple_choice"`
@@ -247,6 +241,29 @@ type Question struct {
 	ScriptID  uuid.UUID    `json:"-"`
 }
 
+type QuestionResponse struct {
+	ResponseID uuid.UUID `json:"response_id"`
+	QuestionID uuid.UUID `json:"question_id"`
+	Mark       *int32    `json:"mark,omitempty"`
+	Feedback   string    `json:"feedback,omitzero"`
+	CreatedAt  time.Time `json:"created_at"`
+}
+
+type Response struct {
+	ID          uuid.UUID      `json:"id"`
+	Status      ResponseStatus `json:"status"`
+	SubmittedAt *time.Time     `json:"submitted_at"`
+	JoinedAt    time.Time      `json:"joined_at"`
+	ExamineeID  uuid.UUID      `json:"examinee_id"`
+	SessionID   uuid.UUID      `json:"session_id"`
+}
+
+type ResponseValue struct {
+	Value      string    `json:"value"`
+	ResponseID uuid.UUID `json:"response_id"`
+	QuestionID uuid.UUID `json:"question_id"`
+}
+
 type Script struct {
 	ID             uuid.UUID `json:"id"`
 	Title          string    `json:"title"`
@@ -270,23 +287,6 @@ type Session struct {
 	CreatedAt        time.Time     `json:"created_at"`
 	CreatorID        uuid.UUID     `json:"creator_id"`
 	ScriptID         uuid.UUID     `json:"script_id"`
-}
-
-type Submission struct {
-	ID          uuid.UUID        `json:"id"`
-	Status      SubmissionStatus `json:"status"`
-	SubmittedAt *time.Time       `json:"submitted_at"`
-	JoinedAt    time.Time        `json:"joined_at"`
-	ExamineeID  uuid.UUID        `json:"examinee_id"`
-	SessionID   uuid.UUID        `json:"session_id"`
-}
-
-type SubmissionQuestion struct {
-	SubmissionID uuid.UUID `json:"-"`
-	QuestionID   uuid.UUID `json:"question_id"`
-	Mark         *int32    `json:"mark,omitempty"`
-	Feedback     string    `json:"feedback,omitzero"`
-	CreatedAt    time.Time `json:"created_at"`
 }
 
 type TextQuestion struct {

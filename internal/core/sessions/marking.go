@@ -17,8 +17,7 @@ import (
 // --- Automatic Marking -------------------------------------------
 // -----------------------------------------------------------------
 
-// Automatically gives the mark for the entire session's
-// submissions.
+// Automatically gives the mark for the entire session's responses.
 func (svc *sessionService) AutoMarkSession(ctx context.Context, user store.User, sessionID uuid.UUID) error {
 
 	if err := common.RequireRole(user, store.UserRoleExaminer); err != nil {
@@ -42,22 +41,22 @@ func (svc *sessionService) AutoMarkSession(ctx context.Context, user store.User,
 	}
 
 	// -------------------------------------------------------------
-	// --- Marking Submissions -------------------------------------
+	// --- Marking Responses ---------------------------------------
 
-	subs, err := qtx.FindSubmissionsForSession(ctx, sessionID)
+	rows, err := qtx.FindSessionResponses(ctx, sessionID)
 	if err != nil {
 		return err
 	}
 
-	for _, sub := range subs {
-		if err := svc.autoMarkSubmission(ctx, qtx, sub.SessionID, sub.ExamineeID); err != nil {
-			log.Printf("Error in AutoMarkSession: AutoMarkSubmission (%v)", err)
+	for _, row := range rows {
+		if err := svc.autoMarkResponse(ctx, qtx, row.Response.SessionID, row.Response.ExamineeID); err != nil {
+			log.Printf("Error in AutoMarkSession: autoMarkResponse (%v)", err)
 			return apperr.ErrInternal
 		}
 	}
 
 	if err := tx.Commit(ctx); err != nil {
-		log.Printf("Error in AutoMarkSession: AutoMarkSubmission (%v)", err)
+		log.Printf("Error in AutoMarkSession: autoMarkResponse (%v)", err)
 		return apperr.ErrInternal
 	}
 
@@ -65,20 +64,20 @@ func (svc *sessionService) AutoMarkSession(ctx context.Context, user store.User,
 }
 
 // Automatically gives a mark for the submission
-func (svc *sessionService) autoMarkSubmission(ctx context.Context, q *store.Queries, sessionID uuid.UUID, examineeID uuid.UUID) error {
+func (svc *sessionService) autoMarkResponse(ctx context.Context, q *store.Queries, sessionID uuid.UUID, examineeID uuid.UUID) error {
 
-	answerFields, err := q.FindSubmissionAnswers(ctx, store.FindSubmissionAnswersParams{
+	rows, err := q.FindQuestionResponses(ctx, store.FindQuestionResponsesParams{
 		SessionID:  sessionID,
 		ExamineeID: examineeID,
 	})
 	if err != nil {
-		log.Printf("Error in AutoMarkSubmission: FindAnswers (%v)", err)
+		log.Printf("Error in autoMarkResponse: Find QuestionResponses (%v)", err)
 		return err
 	}
 
-	for _, answer := range answerFields {
+	for _, row := range rows {
 
-		question, err := svc.script.FindQuestionByID(ctx, answer.SubmissionQuestion.QuestionID, true)
+		question, err := svc.script.FindQuestionByID(ctx, row.QuestionResponse.QuestionID, true, false)
 		if err != nil {
 			return err
 		}
@@ -87,27 +86,30 @@ func (svc *sessionService) autoMarkSubmission(ctx context.Context, q *store.Quer
 			continue
 		}
 
-		correct, err := svc.isCorrect(question, answer.Value)
+		correct, err := svc.isCorrect(question, row.Value)
 		if err != nil {
 			return err
 		}
 
-		if _, err := q.AutoMarkQuestion(ctx, store.AutoMarkQuestionParams{
+		if _, err := q.AutoMarkQuestionResponse(ctx, store.AutoMarkQuestionResponseParams{
 			IsCorrect:  correct,
 			SessionID:  sessionID,
 			ExamineeID: examineeID,
-			QuestionID: answer.SubmissionQuestion.QuestionID,
+			QuestionID: row.QuestionResponse.QuestionID,
 		}); err != nil {
-			log.Printf("Error in AutoMarkSubmission: (%v)", err)
+			log.Printf("Error in autoMarkResponse: (%v)", err)
 			return err
 		}
 	}
 
-	if _, err := q.SetSubmissionStatusPostAutoMark(ctx, store.SetSubmissionStatusPostAutoMarkParams{
-		SessionID:  sessionID,
-		ExamineeID: examineeID,
-	}); err != nil {
-		log.Printf("Error in AutoMarkSubmission: StatusSet (%v)", err)
+	if _, err := q.SetResponseStatusPostAutoMark(
+		ctx,
+		store.SetResponseStatusPostAutoMarkParams{
+			SessionID:  sessionID,
+			ExamineeID: examineeID,
+		},
+	); err != nil {
+		log.Printf("Error in autoMarkResponse: StatusSet (%v)", err)
 		return err
 	}
 
@@ -177,12 +179,12 @@ func (svc *sessionService) isCorrectTextQuestion(answerKey []string, response []
 // -----------------------------------------------------------------
 
 // Marks the questions given by the examiner for
-// an examinee's submission.
-func (svc *sessionService) ExaminerMarkSubmission(
+// an examinee's response.
+func (svc *sessionService) ExaminerMarkResponse(
 	ctx context.Context, user store.User,
 	sessionID uuid.UUID,
 	examineeID uuid.UUID,
-	data MarkForExamineeBody,
+	data MarkResponseBody,
 ) error {
 
 	if err := common.RequireRole(user, store.UserRoleExaminer); err != nil {
@@ -209,7 +211,7 @@ func (svc *sessionService) ExaminerMarkSubmission(
 	// --- Range through the given marks ---------------------------
 
 	for _, mark := range data.Marks {
-		if err := qtx.ExaminerMarkQuestion(ctx, store.ExaminerMarkQuestionParams{
+		if err := qtx.ExaminerMarkQuestionResponse(ctx, store.ExaminerMarkQuestionResponseParams{
 			QuestionID: mark.QuestionID,
 			SessionID:  sessionID,
 			ExamineeID: examineeID,
@@ -224,9 +226,9 @@ func (svc *sessionService) ExaminerMarkSubmission(
 	// -------------------------------------------------------------
 	// --- Fails if the examiner didn't mark all questions ---------
 
-	if _, err := qtx.SetSubmissionStatusPostManualMark(
+	if _, err := qtx.SetResponseStatusPostManualMark(
 		ctx,
-		store.SetSubmissionStatusPostManualMarkParams{
+		store.SetResponseStatusPostManualMarkParams{
 			SessionID:  sessionID,
 			ExamineeID: examineeID,
 		},

@@ -17,11 +17,11 @@ type JoinSessionBody struct {
 	JoinCode string `json:"code"`
 }
 
-type MarkForExamineeBody struct {
-	Marks []Mark `json:"given_marks"`
+type MarkResponseBody struct {
+	Marks []ResponseMark `json:"response_marks"`
 }
 
-type Mark struct {
+type ResponseMark struct {
 	QuestionID uuid.UUID `json:"question_id"`
 	Value      int32     `json:"value"`
 	Feedback   string    `json:"feedback"`
@@ -40,16 +40,16 @@ type CreateSubmissionBody struct {
 	SessionID uuid.UUID `json:"session_id"`
 }
 
-type Submission struct {
-	store.Submission
-	Examinee  store.User `json:"examinee,omitzero"`
-	TotalMark int        `json:"total_mark"`
-	MaxMark   int        `json:"max_mark"`
-	Answers   []Answer   `json:"answers,omitempty"`
+type Response struct {
+	store.Response
+	Examinee          store.User         `json:"examinee,omitzero"`
+	TotalMark         int64              `json:"total_mark"`
+	MaximumMark       int64              `json:"maximum_mark"`
+	QuestionResponses []QuestionResponse `json:"question_responses,omitempty"`
 }
 
-type Answer struct {
-	store.SubmissionQuestion
+type QuestionResponse struct {
+	store.QuestionResponse
 	Question examscripts.Question `json:"question,omitzero"`
 	Value    []string             `json:"value"`
 }

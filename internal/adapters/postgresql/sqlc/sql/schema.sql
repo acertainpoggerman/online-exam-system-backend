@@ -255,7 +255,7 @@ CREATE TABLE proctor_events (
 --- SUBMISSIONS ----------------------------------------------------------------
 --------------------------------------------------------------------------------
 
-CREATE TYPE submission_status AS ENUM (
+CREATE TYPE response_status AS ENUM (
     'enrolled',
     'joined',
     'left',
@@ -267,9 +267,9 @@ CREATE TYPE submission_status AS ENUM (
     'marked'
 );
 
-CREATE TABLE submissions (
+CREATE TABLE responses (
     id      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    status  submission_status NOT NULL DEFAULT 'enrolled',
+    status  response_status NOT NULL DEFAULT 'enrolled',
 
     submitted_at    TIMESTAMPTZ,
     joined_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -279,24 +279,24 @@ CREATE TABLE submissions (
     UNIQUE (examinee_id, session_id)
 );
 
--- A submission question is an insurance that any answer added is
+-- A question response is an insurance that any answer added is
 -- actually valid i.e. the script attached to the session for the
--- submission actually has the question being answered.
+-- response actually has the question being answered.
 --
 -- The foreign key constraint ensures that once the questions have
--- been preset for a submission, answers attached will always be for
+-- been preset for a response, answers attached will always be for
 -- that question.
 --
 --------------------------------------------------------------------
 --
--- SubmissionQuestion --------------| AnswerValue
--- -> created_at: TZ                | AnswerValue
--- -> mark: INTEGER                 | AnswerValue
---                                  | AnswerValue
---                                  | AnswerValue
+-- QuestionResponse --------------| AnswerValue
+-- -> created_at: TZ              | AnswerValue
+-- -> mark: INTEGER               | AnswerValue
+--                                | AnswerValue
+--                                | AnswerValue
 
-CREATE TABLE submission_questions (
-    submission_id   UUID NOT NULL REFERENCES submissions(id) ON DELETE CASCADE,
+CREATE TABLE question_responses (
+    response_id     UUID NOT NULL REFERENCES responses(id) ON DELETE CASCADE,
     question_id     UUID NOT NULL REFERENCES questions(id) ON DELETE CASCADE,
 
     mark        INTEGER DEFAULT NULL CHECK (mark >= 0),
@@ -304,19 +304,19 @@ CREATE TABLE submission_questions (
 
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
 
-    PRIMARY KEY (submission_id, question_id)
+    PRIMARY KEY (response_id, question_id)
 );
 
-CREATE INDEX idx_sq_created_at ON submission_questions(created_at ASC);
+CREATE INDEX idx_qr_created_at ON question_responses(created_at ASC);
 
-CREATE TABLE answer_values (
+CREATE TABLE response_values (
     value           TEXT NOT NULL,
-    submission_id   UUID NOT NULL,
+    response_id     UUID NOT NULL,
     question_id     UUID NOT NULL,
 
-    PRIMARY KEY (submission_id, question_id, value),
-    FOREIGN KEY (submission_id, question_id)
-        REFERENCES submission_questions(submission_id, question_id) ON DELETE CASCADE
+    PRIMARY KEY (response_id, question_id, value),
+    FOREIGN KEY (response_id, question_id)
+        REFERENCES question_responses(response_id, question_id) ON DELETE CASCADE
 );
 
 --------------------------------------------------------------------------------

@@ -44,8 +44,6 @@ type CreateChoiceQuestionParams struct {
 }
 
 // Creates a new choice question
-//
-// ------------------------------
 func (q *Queries) CreateChoiceQuestion(ctx context.Context, arg CreateChoiceQuestionParams) (uuid.UUID, error) {
 	row := q.db.QueryRow(ctx, createChoiceQuestion,
 		arg.Text,
@@ -92,8 +90,6 @@ type CreateTextQuestionParams struct {
 }
 
 // Creates a new text question
-//
-// ----------------------------
 func (q *Queries) CreateTextQuestion(ctx context.Context, arg CreateTextQuestionParams) (uuid.UUID, error) {
 	row := q.db.QueryRow(ctx, createTextQuestion,
 		arg.Text,
@@ -118,8 +114,6 @@ WHERE questions.id = $1
 
 // Deletes the question if possible.
 // cascades to child components (e.g. subquestions & options)
-//
-// -----------------------------------------------------------
 func (q *Queries) DeleteQuestion(ctx context.Context, id uuid.UUID) error {
 	_, err := q.db.Exec(ctx, deleteQuestion, id)
 	return err
@@ -132,8 +126,6 @@ WHERE answer_keys.question_id = $1
 `
 
 // Finds the answer key for a question as a list
-//
-// ----------------------------------------------
 func (q *Queries) FindAnswerKeyForQuestion(ctx context.Context, questionID uuid.UUID) ([]string, error) {
 	rows, err := q.db.Query(ctx, findAnswerKeyForQuestion, questionID)
 	if err != nil {
@@ -155,6 +147,7 @@ func (q *Queries) FindAnswerKeyForQuestion(ctx context.Context, questionID uuid.
 }
 
 const findChoiceQuestionByID = `-- name: FindChoiceQuestionByID :one
+
 SELECT id, is_multiple_choice, type FROM choice_questions
 WHERE choice_questions.id = $1
 `
@@ -174,8 +167,6 @@ SELECT value, question_id, image_url, created_at FROM options
 
 // Finds options for a question order by creation.
 // Used for obtaining options for a question for editing
-//
-// ------------------------------------------------------
 func (q *Queries) FindOptionsForQuestion(ctx context.Context, questionID uuid.UUID) ([]Option, error) {
 	rows, err := q.db.Query(ctx, findOptionsForQuestion, questionID)
 	if err != nil {
@@ -209,8 +200,6 @@ SELECT value, question_id, image_url, created_at FROM options
 
 // Finds options for a question unordered. Used for
 // obtaining options for a question during an exam session
-//
-// --------------------------------------------------------
 func (q *Queries) FindOptionsForQuestionShuffled(ctx context.Context, questionID uuid.UUID) ([]Option, error) {
 	rows, err := q.db.Query(ctx, findOptionsForQuestionShuffled, questionID)
 	if err != nil {
@@ -243,8 +232,6 @@ WHERE questions.id = $1
 `
 
 // Gets a single question
-//
-// -----------------------
 func (q *Queries) FindQuestionByID(ctx context.Context, id uuid.UUID) (Question, error) {
 	row := q.db.QueryRow(ctx, findQuestionByID, id)
 	var i Question
@@ -260,6 +247,17 @@ func (q *Queries) FindQuestionByID(ctx context.Context, id uuid.UUID) (Question,
 	return i, err
 }
 
+const findQuestionMark = `-- name: FindQuestionMark :one
+SELECT get_question_mark($1::uuid)::integer
+`
+
+func (q *Queries) FindQuestionMark(ctx context.Context, questionID uuid.UUID) (int32, error) {
+	row := q.db.QueryRow(ctx, findQuestionMark, questionID)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const findQuestionsForScript = `-- name: FindQuestionsForScript :many
 
 SELECT questions.id, questions.text, questions.image_url, questions.type, questions.mark, questions.created_at, questions.script_id FROM
@@ -270,8 +268,6 @@ ORDER BY questions.created_at ASC
 
 // Gets all the questions for a script ordered
 // by time of creation
-//
-// --------------------------------------------
 func (q *Queries) FindQuestionsForScript(ctx context.Context, id uuid.UUID) ([]Question, error) {
 	rows, err := q.db.Query(ctx, findQuestionsForScript, id)
 	if err != nil {
@@ -300,47 +296,8 @@ func (q *Queries) FindQuestionsForScript(ctx context.Context, id uuid.UUID) ([]Q
 	return items, nil
 }
 
-const findQuestionsForSubmission = `-- name: FindQuestionsForSubmission :many
-
-SELECT questions.id, questions.text, questions.image_url, questions.type, questions.mark, questions.created_at, questions.script_id FROM
-    questions INNER JOIN submission_questions sq ON questions.id = sq.question_id
-WHERE sq.submission_id = $1
-ORDER BY sq.created_at DESC
-`
-
-// Returns all question fields assigned for an examinee.
-// Combine with FindOptionsForQuestionShuffled
-//
-// ------------------------------------------------------
-func (q *Queries) FindQuestionsForSubmission(ctx context.Context, submissionID uuid.UUID) ([]Question, error) {
-	rows, err := q.db.Query(ctx, findQuestionsForSubmission, submissionID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []Question{}
-	for rows.Next() {
-		var i Question
-		if err := rows.Scan(
-			&i.ID,
-			&i.Text,
-			&i.ImageUrl,
-			&i.Type,
-			&i.Mark,
-			&i.CreatedAt,
-			&i.ScriptID,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const findTextQuestionByID = `-- name: FindTextQuestionByID :one
+
 SELECT id, is_short_text, type FROM text_questions WHERE text_questions.id = $1
 `
 
@@ -376,8 +333,6 @@ type ReplaceAnswerKeyForQuestionParams struct {
 
 // Fully replace all answer key values for the
 // question with the given ID
-//
-// --------------------------------------------
 func (q *Queries) ReplaceAnswerKeyForQuestion(ctx context.Context, arg ReplaceAnswerKeyForQuestionParams) error {
 	_, err := q.db.Exec(ctx, replaceAnswerKeyForQuestion, arg.QuestionID, arg.AnswerKey)
 	return err
@@ -411,8 +366,6 @@ type ReplaceOptionsForQuestionParams struct {
 // Arrays passed are "zipped" together using unnest.
 // Will not work with other subquestion types thanks to the
 // foreign key constraints.
-//
-// ---------------------------------------------------------
 func (q *Queries) ReplaceOptionsForQuestion(ctx context.Context, arg ReplaceOptionsForQuestionParams) error {
 	_, err := q.db.Exec(ctx, replaceOptionsForQuestion, arg.QuestionID, arg.Values, arg.ImageUrls)
 	return err
@@ -438,8 +391,6 @@ type UpdateQuestionFieldsParams struct {
 }
 
 // Updates the parent question fields if possible.
-//
-// ------------------------------------------------
 func (q *Queries) UpdateQuestionFields(ctx context.Context, arg UpdateQuestionFieldsParams) error {
 	_, err := q.db.Exec(ctx, updateQuestionFields,
 		arg.ID,
@@ -487,8 +438,6 @@ type UpsertChoiceQuestionParams struct {
 // Inserting a new subquestion in this case will automatically
 // delete all other subquestions & change the type of the
 // parent question to maintain FK constraints.
-//
-// -------------------------------------------------------------
 func (q *Queries) UpsertChoiceQuestion(ctx context.Context, arg UpsertChoiceQuestionParams) error {
 	_, err := q.db.Exec(ctx, upsertChoiceQuestion, arg.ID, arg.IsMultipleChoice)
 	return err
@@ -531,8 +480,6 @@ type UpsertTextQuestionParams struct {
 // Inserting a new subquestion in this case will automatically
 // delete all other subquestions & change the type of the
 // parent question to maintain FK constraints.
-//
-// -------------------------------------------------------------
 func (q *Queries) UpsertTextQuestion(ctx context.Context, arg UpsertTextQuestionParams) error {
 	_, err := q.db.Exec(ctx, upsertTextQuestion, arg.ID, arg.IsShortText)
 	return err

@@ -99,9 +99,9 @@ func (h *WebsocketHandler) handleExamineeConnect(w http.ResponseWriter, r *http.
 		}
 
 		var onGraceExpired func()
-		if status, err := h.svc.FindSubmissionStatus(
+		if status, err := h.svc.FindResponseStatus(
 			ctx, user, sessionID,
-		); err == nil && status == store.SubmissionStatusDisconnected {
+		); err == nil && status == store.ResponseStatusDisconnected {
 			onGraceExpired = func() {
 				if err := h.svc.OnGraceExpired(ctx, user.ID, client.sessionID); err != nil {
 					log.Printf(

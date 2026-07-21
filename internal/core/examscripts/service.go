@@ -24,10 +24,6 @@ type ScriptService interface {
 	DeleteQuestion(ctx context.Context, user store.User, scriptID uuid.UUID, questionID uuid.UUID) (Question, error)
 }
 
-type ExtScriptService interface {
-	FindQuestionByID(ctx context.Context, questionID uuid.UUID, showAnswer bool) (Question, error)
-}
-
 type scriptService struct {
 	q    *store.Queries
 	pool *pgxpool.Pool
@@ -250,89 +246,4 @@ func (svc *scriptService) DeleteScriptByID(ctx context.Context, user store.User,
 	}
 
 	return tx.Commit(ctx)
-}
-
-func (svc *scriptService) FindScriptForSubmission(ctx context.Context, user store.User, submissionID uuid.UUID) (Script, error) {
-
-	if user.Role != store.UserRoleExaminee {
-		return Script{}, fmt.Errorf("Cannot access resource as: %s", user.Role)
-	}
-
-	tx, err := svc.pool.Begin(ctx)
-	if err != nil {
-		return Script{}, err
-	}
-	defer tx.Rollback(ctx)
-	qtx := svc.q.WithTx(tx)
-
-	script, err := qtx.FindScriptForSubmission(ctx, submissionID)
-	if err != nil {
-		return Script{}, err
-	}
-
-	questions, err := qtx.FindQuestionsForSubmission(ctx, submissionID)
-	if err != nil {
-		return Script{}, err
-	}
-
-	qs := make([]Question, len(questions))
-	for idx, question := range questions {
-
-		var answerKey []string
-		// answerKey, err = qtx.FindAnswerKeyForQuestion(ctx, question.ID)
-		// if err != nil {
-		// 	return Script{}, err
-		// }
-
-		switch question.Type {
-
-		// ---------------------------------------------------------------
-
-		case store.QuestionTypeChoice:
-			subq, err := qtx.FindChoiceQuestionByID(ctx, question.ID)
-			if err != nil {
-				return Script{}, err
-			}
-			options, err := qtx.FindOptionsForQuestionShuffled(ctx, question.ID)
-			if err != nil {
-				return Script{}, err
-			}
-			qs[idx] = Question{
-				Question: question,
-				SubQuestion: &ChoiceQuestion{
-					ChoiceQuestion: subq,
-					Options:        options,
-				},
-			}
-			if len(answerKey) > 0 {
-				qs[idx].AnswerKey = answerKey
-			}
-
-		// ---------------------------------------------------------------
-
-		case store.QuestionTypeText:
-			subq, err := qtx.FindTextQuestionByID(ctx, question.ID)
-			if err != nil {
-				return Script{}, err
-			}
-			qs[idx] = Question{
-				Question:    question,
-				SubQuestion: &TextQuestion{subq},
-			}
-			if len(answerKey) > 0 {
-				qs[idx].AnswerKey = answerKey
-			}
-
-		// ---------------------------------------------------------------
-
-		default:
-			return Script{}, fmt.Errorf("Question Type: \"%s\" does not exist", question.Type)
-		}
-	}
-
-	return Script{
-		Script:    script,
-		Questions: qs,
-	}, tx.Commit(ctx)
-
 }

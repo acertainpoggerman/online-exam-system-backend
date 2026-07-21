@@ -66,13 +66,7 @@ SELECT * FROM scripts
 WHERE scripts.id = $1;
 
 
--- name: FindScriptForSubmission :one
-
-SELECT scripts.* FROM
-    scripts INNER JOIN sessions ON scripts.id = sessions.script_id
-    INNER JOIN submissions ON submissions.session_id = sessions.id
-WHERE submissions.id = @submission_id::uuid LIMIT 1;
-
+--
 --
 -- name: ScriptTotalMarks :one
 

@@ -111,31 +111,6 @@ func (q *Queries) FindScriptCountForExaminer(ctx context.Context, arg FindScript
 	return count, err
 }
 
-const findScriptForSubmission = `-- name: FindScriptForSubmission :one
-
-SELECT scripts.id, scripts.title, scripts.heading, scripts.description, scripts.locked, scripts.default_mark, scripts.created_at, scripts.last_modified_at, scripts.creator_id FROM
-    scripts INNER JOIN sessions ON scripts.id = sessions.script_id
-    INNER JOIN submissions ON submissions.session_id = sessions.id
-WHERE submissions.id = $1::uuid LIMIT 1
-`
-
-func (q *Queries) FindScriptForSubmission(ctx context.Context, submissionID uuid.UUID) (Script, error) {
-	row := q.db.QueryRow(ctx, findScriptForSubmission, submissionID)
-	var i Script
-	err := row.Scan(
-		&i.ID,
-		&i.Title,
-		&i.Heading,
-		&i.Description,
-		&i.Locked,
-		&i.DefaultMark,
-		&i.CreatedAt,
-		&i.LastModifiedAt,
-		&i.CreatorID,
-	)
-	return i, err
-}
-
 const findScriptsForExaminer = `-- name: FindScriptsForExaminer :many
 
 SELECT id, title, heading, description, locked, default_mark, created_at, last_modified_at, creator_id FROM scripts

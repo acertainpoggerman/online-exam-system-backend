@@ -11,15 +11,16 @@ import (
 )
 
 type Querier interface {
-	// Automatically gives a mark to the question. Will
+	// Automatically gives a mark to the question response. Will
 	// only give the mark as 0, or the maximum mark based
 	// on the application layer's is_correct value.
 	//
-	// If this fails for any of the questions, then the whole
+	// If this fails for any of the question responses, then the whole
 	// thing should fail, meaning that post marking of these
-	// questions,
+	// questions, all questions that can be automatically marked have been
+	// marked.
 	//
-	AutoMarkQuestion(ctx context.Context, arg AutoMarkQuestionParams) (SubmissionQuestion, error)
+	AutoMarkQuestionResponse(ctx context.Context, arg AutoMarkQuestionResponseParams) (QuestionResponse, error)
 	// Puts the session in CLOSED mode (default mode). While in
 	// CLOSED mode, examinees cannot join the session. Only
 	// sessions in OPEN mode can be closed.
@@ -27,7 +28,6 @@ type Querier interface {
 	CloseSession(ctx context.Context, id uuid.UUID) (Session, error)
 	// Creates a new choice question
 	//
-	//------------------------------
 	CreateChoiceQuestion(ctx context.Context, arg CreateChoiceQuestionParams) (uuid.UUID, error)
 	// Creates a new examinee. Intended to be used by students
 	// to partake in examinations. In the future, ensure email
@@ -40,22 +40,24 @@ type Querier interface {
 	// bazeuniversity.edu.ng
 	//
 	CreateExaminer(ctx context.Context, arg CreateExaminerParams) (CreateExaminerRow, error)
+	// Creates a response given a session ID
+	// and an examinee ID. Will default to ENROLLED
+	// and enrolled_at set to the current time of execution
+	//
+	CreateResponse(ctx context.Context, arg CreateResponseParams) (Response, error)
 	// Creates a new script
 	//
 	CreateScript(ctx context.Context, arg CreateScriptParams) (Script, error)
 	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
-	CreateSubmission(ctx context.Context, arg CreateSubmissionParams) (Submission, error)
 	// Creates a new text question
 	//
-	//----------------------------
 	CreateTextQuestion(ctx context.Context, arg CreateTextQuestionParams) (uuid.UUID, error)
 	DebugGetCount(ctx context.Context, arg DebugGetCountParams) (int64, error)
 	DebugGetQuestionResponses(ctx context.Context, arg DebugGetQuestionResponsesParams) ([]DebugGetQuestionResponsesRow, error)
-	DebugGetStatus(ctx context.Context, arg DebugGetStatusParams) (SubmissionStatus, error)
+	DebugGetStatus(ctx context.Context, arg DebugGetStatusParams) (ResponseStatus, error)
 	// Deletes the question if possible.
 	// cascades to child components (e.g. subquestions & options)
 	//
-	//-----------------------------------------------------------
 	DeleteQuestion(ctx context.Context, id uuid.UUID) error
 	// Deletes the script if possible
 	//
@@ -67,49 +69,52 @@ type Querier interface {
 	// mode can be started.
 	//
 	EndSession(ctx context.Context, id uuid.UUID) (Session, error)
-	ExamineeFindSubmitted(ctx context.Context, examineeID uuid.UUID) ([]Submission, error)
-	// Sets the mark manually for an individual question.
+	// Finds responses for an examinee using the examinee's ID
+	//
+	ExamineeFindResponses(ctx context.Context, examineeID uuid.UUID) ([]Response, error)
+	// Sets the mark manually for an individual question response.
 	// Should clamp the mark to (0, get_question_mark(question_id))
 	//
-	ExaminerMarkQuestion(ctx context.Context, arg ExaminerMarkQuestionParams) error
+	ExaminerMarkQuestionResponse(ctx context.Context, arg ExaminerMarkQuestionResponseParams) error
 	// Finds the answer key for a question as a list
 	//
-	//----------------------------------------------
 	FindAnswerKeyForQuestion(ctx context.Context, questionID uuid.UUID) ([]string, error)
 	FindChoiceQuestionByID(ctx context.Context, id uuid.UUID) (ChoiceQuestion, error)
-	// Returns the submission ID if the examinee may open a websocket connection.
+	// Returns the response ID if the examinee may open a websocket connection.
 	//
 	// OPEN:     enrolled or left (waiting room entry / reconnect)
 	// STARTED:  disconnected only (grace reconnect; flagged requires appeal first)
 	//
-	FindConnectableSubmission(ctx context.Context, arg FindConnectableSubmissionParams) (uuid.UUID, error)
+	FindConnectableResponse(ctx context.Context, arg FindConnectableResponseParams) (uuid.UUID, error)
 	FindExamineeByEmail(ctx context.Context, email string) (User, error)
 	FindExaminerByEmail(ctx context.Context, email string) (User, error)
 	// Finds options for a question order by creation.
 	// Used for obtaining options for a question for editing
 	//
-	//------------------------------------------------------
 	FindOptionsForQuestion(ctx context.Context, questionID uuid.UUID) ([]Option, error)
 	// Finds options for a question unordered. Used for
 	// obtaining options for a question during an exam session
 	//
-	//--------------------------------------------------------
 	FindOptionsForQuestionShuffled(ctx context.Context, questionID uuid.UUID) ([]Option, error)
 	FindProctorLogsForExaminee(ctx context.Context, arg FindProctorLogsForExamineeParams) ([]ProctorEvent, error)
 	// Gets a single question
 	//
-	//-----------------------
 	FindQuestionByID(ctx context.Context, id uuid.UUID) (Question, error)
+	FindQuestionMark(ctx context.Context, questionID uuid.UUID) (int32, error)
+	// Gets all the question responses for a response, along
+	// with the response values (i.e. the response's answers) for that question.
+	//
+	FindQuestionResponses(ctx context.Context, arg FindQuestionResponsesParams) ([]FindQuestionResponsesRow, error)
 	// Gets all the questions for a script ordered
 	// by time of creation
 	//
-	//--------------------------------------------
 	FindQuestionsForScript(ctx context.Context, id uuid.UUID) ([]Question, error)
-	// Returns all question fields assigned for an examinee.
-	// Combine with FindOptionsForQuestionShuffled
+	// Finds the marks for a response (must have MARKED status)
+	// given session ID and examinee ID. Will return the mark's total
+	// and maximum which represents: (total / maximum)
 	//
-	//------------------------------------------------------
-	FindQuestionsForSubmission(ctx context.Context, submissionID uuid.UUID) ([]Question, error)
+	FindResponseMarks(ctx context.Context, arg FindResponseMarksParams) (FindResponseMarksRow, error)
+	FindResponseStatus(ctx context.Context, arg FindResponseStatusParams) (ResponseStatus, error)
 	// Finds a script by its ID
 	//
 	FindScriptByID(ctx context.Context, id uuid.UUID) (Script, error)
@@ -117,7 +122,6 @@ type Querier interface {
 	// examiner with the search query
 	//
 	FindScriptCountForExaminer(ctx context.Context, arg FindScriptCountForExaminerParams) (int64, error)
-	FindScriptForSubmission(ctx context.Context, submissionID uuid.UUID) (Script, error)
 	// Gets the scripts belonging to the examiner
 	// with cursor pagination and a search query
 	//
@@ -128,102 +132,102 @@ type Querier interface {
 	// examiner with the search query
 	//
 	FindSessionCountForExaminer(ctx context.Context, arg FindSessionCountForExaminerParams) (int64, error)
+	// Finds the responses for a session given the
+	// session ID. No extra information is added
+	//
+	FindSessionResponses(ctx context.Context, sessionID uuid.UUID) ([]FindSessionResponsesRow, error)
+	// Finds the responses for a session given the
+	// session ID, including each response's examinee information
+	//
+	FindSessionResponsesWithUser(ctx context.Context, sessionID uuid.UUID) ([]FindSessionResponsesWithUserRow, error)
 	// Gets the sessions belonging to the examiner
 	// with cursor pagination and a search query
 	//
 	FindSessionsForExaminer(ctx context.Context, arg FindSessionsForExaminerParams) ([]Session, error)
-	// Gets the answers for a submission
+	// Find the response with matching session ID and examinee ID.
 	//
-	FindSubmissionAnswers(ctx context.Context, arg FindSubmissionAnswersParams) ([]FindSubmissionAnswersRow, error)
-	// Find submission with matching session ID and examinee ID.
-	//
-	FindSubmissionByID(ctx context.Context, arg FindSubmissionByIDParams) (Submission, error)
-	FindSubmissionStatus(ctx context.Context, arg FindSubmissionStatusParams) (SubmissionStatus, error)
-	FindSubmissionsForSession(ctx context.Context, sessionID uuid.UUID) ([]Submission, error)
-	//
-	FindSubmssionsForSessionWithUser(ctx context.Context, sessionID uuid.UUID) ([]FindSubmssionsForSessionWithUserRow, error)
+	FindSingleResponse(ctx context.Context, arg FindSingleResponseParams) (Response, error)
 	FindTextQuestionByID(ctx context.Context, id uuid.UUID) (TextQuestion, error)
 	FindUserByEmail(ctx context.Context, email string) (User, error)
 	FindUserByID(ctx context.Context, id uuid.UUID) (User, error)
-	GetQuestionMark(ctx context.Context, questionID uuid.UUID) (int32, error)
 	LogProctorEvent(ctx context.Context, arg LogProctorEventParams) (uuid.UUID, error)
 	// Puts the session in OPEN mode. While in OPEN mode
 	// examinees can join the session. Only sessions in
 	// CLOSED mode can be opened.
 	//
 	OpenSession(ctx context.Context, id uuid.UUID) (Session, error)
-	// Replaces the submission answer for a given question
-	//
-	ReplaceAnswerForQuestion(ctx context.Context, arg ReplaceAnswerForQuestionParams) error
 	// Fully replace all answer key values for the
 	// question with the given ID
 	//
-	//--------------------------------------------
 	ReplaceAnswerKeyForQuestion(ctx context.Context, arg ReplaceAnswerKeyForQuestionParams) error
 	// Fully replace all options with arrays of new values.
 	// Arrays passed are "zipped" together using unnest.
 	// Will not work with other subquestion types thanks to the
 	// foreign key constraints.
 	//
-	//---------------------------------------------------------
 	ReplaceOptionsForQuestion(ctx context.Context, arg ReplaceOptionsForQuestionParams) error
+	// Replaces the values (i.e. the answers) for
+	// a question response.
+	//
+	ReplaceQuestionResponseValues(ctx context.Context, arg ReplaceQuestionResponseValuesParams) error
+	//
 	//
 	ScriptTotalMarks(ctx context.Context, id uuid.UUID) (int64, error)
 	// Sets the questions for the submission of a user. Intended to
 	// be used after an examiner starts the exam session before
-	// submissions are set as EDITABLE for examinees to answer
+	// responses are set as EDITABLE for examinees to answer
 	//
-	SetQuestionsForSubmissions(ctx context.Context, sessionID uuid.UUID) error
+	SetQuestionResponsesForSession(ctx context.Context, sessionID uuid.UUID) error
 	// Disconnect during STARTED while still eligible to answer (EDITABLE -> DISCONNECTED).
 	//
-	SetSubmissionDisconnected(ctx context.Context, arg SetSubmissionDisconnectedParams) (Submission, error)
+	SetResponseDisconnected(ctx context.Context, arg SetResponseDisconnectedParams) (Response, error)
 	// Examiner grants appeal and client is disconnected in
 	// session hub (FLAGGED -> DISCONNECTED).
 	//
-	SetSubmissionDisconnectedFromFlagged(ctx context.Context, arg SetSubmissionDisconnectedFromFlaggedParams) (Submission, error)
+	SetResponseDisconnectedFromFlagged(ctx context.Context, arg SetResponseDisconnectedFromFlaggedParams) (Response, error)
 	// Examiner readmit after missing the start window (LEFT -> DISCONNECTED).
-	// Examinee reconnects with SetSubmissionEditableFromDisconnect.
+	// Examinee reconnects with SetResponseEditableFromDisconnect.
 	//
-	SetSubmissionDisconnectedFromLeft(ctx context.Context, arg SetSubmissionDisconnectedFromLeftParams) (Submission, error)
+	SetResponseDisconnectedFromLeft(ctx context.Context, arg SetResponseDisconnectedFromLeftParams) (Response, error)
 	// Reconnect during STARTED after grace disconnect (DISCONNECTED -> EDITABLE).
 	//
-	SetSubmissionEditableFromDisconnect(ctx context.Context, arg SetSubmissionEditableFromDisconnectParams) (Submission, error)
+	SetResponseEditableFromDisconnect(ctx context.Context, arg SetResponseEditableFromDisconnectParams) (Response, error)
 	// Examiner grants appeal and client is connected in session
 	// hub (FLAGGED -> EDITABLE).
 	//
-	SetSubmissionEditableFromFlagged(ctx context.Context, arg SetSubmissionEditableFromFlaggedParams) (Submission, error)
-	// Flag submission when grace period has expired
+	SetResponseEditableFromFlagged(ctx context.Context, arg SetResponseEditableFromFlaggedParams) (Response, error)
+	// Flag response when grace period has expired
 	// (DISCONNECTED -> FLAGGED).
 	//
-	SetSubmissionFlaggedFromDisconnect(ctx context.Context, arg SetSubmissionFlaggedFromDisconnectParams) (Submission, error)
-	// Flag submission when if server flags user as cheating
+	SetResponseFlaggedFromDisconnect(ctx context.Context, arg SetResponseFlaggedFromDisconnectParams) (Response, error)
+	// Flag response when if server flags user as cheating
 	// (EDITABLE -> FLAGGED).
 	//
-	SetSubmissionFlaggedFromEditable(ctx context.Context, arg SetSubmissionFlaggedFromEditableParams) (Submission, error)
+	SetResponseFlaggedFromEditable(ctx context.Context, arg SetResponseFlaggedFromEditableParams) (Response, error)
 	// Connect during OPEN: first entry (ENROLLED -> JOINED)
 	// or reconnect (LEFT -> JOINED).
 	//
-	SetSubmissionJoined(ctx context.Context, arg SetSubmissionJoinedParams) (Submission, error)
+	SetResponseJoined(ctx context.Context, arg SetResponseJoinedParams) (Response, error)
 	// Disconnect during OPEN (JOINED -> LEFT). Ensures session start does not
 	// promote disconnected examinees to EDITABLE.
 	//
-	SetSubmissionLeft(ctx context.Context, arg SetSubmissionLeftParams) (Submission, error)
-	// Set the submission status to a connected state based on current
-	// submission and session state
+	SetResponseLeftFromJoined(ctx context.Context, arg SetResponseLeftFromJoinedParams) (Response, error)
+	// Set the response status to a connected state based on current
+	// response and session state
 	//
-	// submission: (ENROLLED, LEFT) session: OPEN       -> JOINED
-	// submission: (DISCONNECTED)   sesssion: STARTED   -> EDITABLE
+	// response: (ENROLLED, LEFT) session: OPEN       -> JOINED
+	// response: (DISCONNECTED)   sesssion: STARTED   -> EDITABLE
 	//
-	SetSubmissionOnConnect(ctx context.Context, arg SetSubmissionOnConnectParams) (Submission, error)
-	// Set the submission status to a disconnected state based
-	// on current submission and session state
+	SetResponseStatusOnConnect(ctx context.Context, arg SetResponseStatusOnConnectParams) (Response, error)
+	// Set the response status to a disconnected state based
+	// on current response and session state
 	//
-	// submission: (JOINED)     session: OPEN       -> LEFT
-	// submission: (EDITABLE)   sesssion: STARTED   -> DISCONNECTED
+	// response: (JOINED)     session: OPEN       -> LEFT
+	// response: (EDITABLE)   sesssion: STARTED   -> DISCONNECTED
 	//
-	SetSubmissionOnDisconnect(ctx context.Context, arg SetSubmissionOnDisconnectParams) (Submission, error)
-	// Set the status of the submission post automatic marking.
-	// If the submission still has questions yet to be marked, THEN
+	SetResponseStatusOnDisconnect(ctx context.Context, arg SetResponseStatusOnDisconnectParams) (Response, error)
+	// Set the status of the response post automatic marking.
+	// If the response still has questions yet to be marked, THEN
 	// set it as UNREVIEWED.
 	//
 	// Should only be used after marking every individual question
@@ -232,45 +236,43 @@ type Querier interface {
 	// (SUBMITTED -> UNREVIEWED)    : len(questions.mark == NULL) >= 1
 	// (SUBMITTED -> MARKED)        : len(questions.mark == NULL) == 0
 	//
-	// The examiner should handle manually marking questions for submissions
+	// The examiner should handle manually marking questions for responses
 	// post automatic marking that still have unresolved questions.
 	//
-	SetSubmissionStatusPostAutoMark(ctx context.Context, arg SetSubmissionStatusPostAutoMarkParams) (Submission, error)
+	SetResponseStatusPostAutoMark(ctx context.Context, arg SetResponseStatusPostAutoMarkParams) (Response, error)
 	// Will set the status only to marked if the count of
 	// unmarked questions is 0. Should give error in application
 	// layer if otherwise.
 	//
 	// (UNREVIEWED -> MARKED)
 	//
-	SetSubmissionStatusPostManualMark(ctx context.Context, arg SetSubmissionStatusPostManualMarkParams) (SetSubmissionStatusPostManualMarkRow, error)
+	SetResponseStatusPostManualMark(ctx context.Context, arg SetResponseStatusPostManualMarkParams) (SetResponseStatusPostManualMarkRow, error)
 	// On session start: promote waiting-room examinees and lock out no-shows.
-	// Use after the session is STARTED and submission questions are assigned.
+	// Use after the session is STARTED and response questions are assigned.
 	//
-	// ENROLLED -> LEFT: enrolled but never connected during OPEN (see SetSubmissionJoined).
+	// ENROLLED -> LEFT: enrolled but never connected during OPEN (see SetResponseJoined).
 	// JOINED -> EDITABLE: was in the waiting room when the exam started.
 	//
 	// Rows already LEFT (disconnected during OPEN) are unchanged and require
-	// examiner readmit (SetSubmissionDisconnectedFromLeft) to participate.
+	// examiner readmit (SetResponseDisconnectedFromLeft) to participate.
 	//
-	SetSubmissionStatusesForStartedSession(ctx context.Context, sessionID uuid.UUID) (int64, error)
+	SetResponseStatusesForStartedSession(ctx context.Context, sessionID uuid.UUID) (int64, error)
 	// Voluntary final submit by the examinee (EDITABLE -> SUBMITTED).
 	//
-	SetSubmissionSubmitted(ctx context.Context, arg SetSubmissionSubmittedParams) (Submission, error)
+	SetResponseSubmitted(ctx context.Context, arg SetResponseSubmittedParams) (Response, error)
 	// Sets the session to STARTED mode. Only sessions in OPEN
 	// mode can be started.
 	//
 	StartSession(ctx context.Context, id uuid.UUID) (StartSessionRow, error)
-	SubmissionMarks(ctx context.Context, arg SubmissionMarksParams) (SubmissionMarksRow, error)
-	// On session end: auto-submit all in-progress submissions for the session.
+	// On session end: auto-submit all in-progress responses for the session.
 	// Updates LEFT, EDITABLE, DISCONNECTED, and FLAGGED to SUBMITTED.
 	//
 	// ENROLLED and JOINED are excluded (should not exist after session start;
-	// see SetSubmissionStatusesForStartedSession). SUBMITTED and MARKED are terminal.
+	// see SetResponseStatusesForStartedSession). SUBMITTED and MARKED are terminal.
 	//
-	SubmitAllSubmissionsForSession(ctx context.Context, sessionID uuid.UUID) (int64, error)
+	SubmitAllResponsesForSession(ctx context.Context, sessionID uuid.UUID) (int64, error)
 	// Updates the parent question fields if possible.
 	//
-	//------------------------------------------------
 	UpdateQuestionFields(ctx context.Context, arg UpdateQuestionFieldsParams) error
 	// Updates the script if possible
 	//
@@ -285,7 +287,6 @@ type Querier interface {
 	// delete all other subquestions & change the type of the
 	// parent question to maintain FK constraints.
 	//
-	//-------------------------------------------------------------
 	UpsertChoiceQuestion(ctx context.Context, arg UpsertChoiceQuestionParams) error
 	// Insert text-question values unless there is conflict,
 	// in which case update the existing subquestion.
@@ -294,7 +295,6 @@ type Querier interface {
 	// delete all other subquestions & change the type of the
 	// parent question to maintain FK constraints.
 	//
-	//-------------------------------------------------------------
 	UpsertTextQuestion(ctx context.Context, arg UpsertTextQuestionParams) error
 }
 

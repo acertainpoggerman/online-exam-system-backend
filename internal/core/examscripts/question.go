@@ -9,6 +9,10 @@ import (
 	"github.com/google/uuid"
 )
 
+type ExtScriptService interface {
+	FindQuestionByID(ctx context.Context, questionID uuid.UUID, getAnswerKey bool, getDefaultMark bool) (Question, error)
+}
+
 // Creates a Question for a script given the scriptID
 // and an instance of the question struct.
 func (svc *scriptService) CreateQuestion(ctx context.Context, user store.User, scriptID uuid.UUID, question Question) (Question, error) {
@@ -103,7 +107,7 @@ func (svc *scriptService) CreateQuestion(ctx context.Context, user store.User, s
 		return Question{}, err
 	}
 
-	created, err := svc.findQuestionByID(ctx, qtx, questionID, true)
+	created, err := svc.findQuestionByID(ctx, qtx, questionID, true, false)
 	if err != nil {
 		return Question{}, err
 	}
@@ -207,7 +211,7 @@ func (svc *scriptService) ReplaceQuestion(ctx context.Context, user store.User, 
 	// ------------------------------------------------------------
 	// --- Get Full Question --------------------------------------
 
-	replaced, err := svc.findQuestionByID(ctx, qtx, questionID, true)
+	replaced, err := svc.findQuestionByID(ctx, qtx, questionID, true, false)
 	if err != nil {
 		return Question{}, err
 	}
@@ -245,7 +249,7 @@ func (svc *scriptService) DeleteQuestion(ctx context.Context, user store.User, s
 	// ------------------------------------------------------------
 	// --- Get Full Question & Delete it --------------------------
 
-	deleted, err := svc.findQuestionByID(ctx, qtx, questionID, true)
+	deleted, err := svc.findQuestionByID(ctx, qtx, questionID, true, false)
 	if err != nil {
 		return Question{}, err
 	}
@@ -267,9 +271,14 @@ func (svc *scriptService) DeleteQuestion(ctx context.Context, user store.User, s
 
 // Finds a question given its ID. getAnswerKey determines if the method
 // should also return the question with its answer key.
-func (svc *scriptService) FindQuestionByID(ctx context.Context, questionID uuid.UUID, getAnswerKey bool) (Question, error) {
+func (svc *scriptService) FindQuestionByID(
+	ctx context.Context,
+	questionID uuid.UUID,
+	getAnswerKey bool,
+	getDefaultMark bool,
+) (Question, error) {
 
-	question, err := svc.findQuestionByID(ctx, svc.q, questionID, getAnswerKey)
+	question, err := svc.findQuestionByID(ctx, svc.q, questionID, getAnswerKey, getDefaultMark)
 	if err != nil {
 		return Question{}, err
 	}
@@ -277,11 +286,24 @@ func (svc *scriptService) FindQuestionByID(ctx context.Context, questionID uuid.
 	return question, nil
 }
 
-func (svc *scriptService) findQuestionByID(ctx context.Context, qtx *store.Queries, questionID uuid.UUID, getAnswerKey bool) (Question, error) {
+func (svc *scriptService) findQuestionByID(
+	ctx context.Context, q *store.Queries,
+	questionID uuid.UUID,
+	getAnswerKey bool,
+	getDefaultMark bool,
+) (Question, error) {
 
-	question, err := qtx.FindQuestionByID(ctx, questionID)
+	question, err := q.FindQuestionByID(ctx, questionID)
 	if err != nil {
 		return Question{}, err
+	}
+
+	if getDefaultMark && question.Mark == nil {
+		mark, err := q.FindQuestionMark(ctx, questionID)
+		if err != nil {
+			return Question{}, err
+		}
+		question.Mark = &mark
 	}
 
 	switch question.Type {
@@ -289,11 +311,11 @@ func (svc *scriptService) findQuestionByID(ctx context.Context, qtx *store.Queri
 	// ------------------------------------------------------------
 
 	case store.QuestionTypeChoice:
-		subq, err := qtx.FindChoiceQuestionByID(ctx, question.ID)
+		subq, err := q.FindChoiceQuestionByID(ctx, question.ID)
 		if err != nil {
 			return Question{}, err
 		}
-		options, err := qtx.FindOptionsForQuestion(ctx, question.ID)
+		options, err := q.FindOptionsForQuestion(ctx, question.ID)
 		if err != nil {
 			return Question{}, err
 		}
@@ -307,7 +329,7 @@ func (svc *scriptService) findQuestionByID(ctx context.Context, qtx *store.Queri
 		}
 
 		if getAnswerKey {
-			answerKey, err := qtx.FindAnswerKeyForQuestion(ctx, question.ID)
+			answerKey, err := q.FindAnswerKeyForQuestion(ctx, question.ID)
 			if err != nil {
 				return Question{}, err
 			}
@@ -321,7 +343,7 @@ func (svc *scriptService) findQuestionByID(ctx context.Context, qtx *store.Queri
 	// ------------------------------------------------------------
 
 	case store.QuestionTypeText:
-		subq, err := qtx.FindTextQuestionByID(ctx, question.ID)
+		subq, err := q.FindTextQuestionByID(ctx, question.ID)
 		if err != nil {
 			return Question{}, err
 		}
@@ -332,7 +354,7 @@ func (svc *scriptService) findQuestionByID(ctx context.Context, qtx *store.Queri
 		}
 
 		if getAnswerKey {
-			answerKey, err := qtx.FindAnswerKeyForQuestion(ctx, question.ID)
+			answerKey, err := q.FindAnswerKeyForQuestion(ctx, question.ID)
 			if err != nil {
 				return Question{}, err
 			}

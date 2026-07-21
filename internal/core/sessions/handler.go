@@ -37,14 +37,14 @@ func (h *SessionHandler) RegisterRoutes(r *http.ServeMux) {
 	r.HandleFunc("POST /sessions/{session_id}/examinees/{examinee_id}/readmit", h.readmitExaminee)
 	r.HandleFunc("POST /sessions/{session_id}/examinees/{examinee_id}/unflag", h.unflagExaminee)
 	r.HandleFunc("GET /sessions/{session_id}/examinees/{examinee_id}/logs", h.getExamineeLogs)
-	r.HandleFunc("GET /sessions/{session_id}/examinees", h.getSubmissionsInSession)
+	r.HandleFunc("GET /sessions/{session_id}/examinees", h.getSessionResponses)
 	// r.HandleFunc("GET /sessions/{session_id}/examinees/{examinee_id}", h.getSubmission)
 
-	r.HandleFunc("PUT /sessions/{session_id}/answers/{question_id}", h.putAnswer)
-	r.HandleFunc("POST /sessions/{session_id}/submit", h.submitForSession)
+	r.HandleFunc("PUT /sessions/{session_id}/answers/{question_id}", h.putQuestionResponse)
+	r.HandleFunc("POST /sessions/{session_id}/submit", h.submitSessionResponse)
 
 	r.HandleFunc("POST /sessions/{session_id}/mark", h.autoMarkSession)
-	r.HandleFunc("POST /sessions/{session_id}/examinees/{examinee_id}/mark", h.examinerMarkSubmission)
+	r.HandleFunc("POST /sessions/{session_id}/examinees/{examinee_id}/mark", h.examinerMarkResponse)
 }
 
 // -----------------------------------------------------------------------
@@ -168,7 +168,7 @@ func (h *SessionHandler) endSessionByID(w http.ResponseWriter, r *http.Request) 
 // -----------------------------------------------------------------------
 // -----------------------------------------------------------------------
 
-func (h *SessionHandler) putAnswer(w http.ResponseWriter, r *http.Request) {
+func (h *SessionHandler) putQuestionResponse(w http.ResponseWriter, r *http.Request) {
 
 	user, err := jwt.GetUserDataFromContext(r.Context())
 	if err != nil {
@@ -188,13 +188,13 @@ func (h *SessionHandler) putAnswer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var answer Answer
-	if err := json.ReadRequestBody(r, &answer); err != nil {
+	var qr QuestionResponse
+	if err := json.ReadRequestBody(r, &qr); err != nil {
 		json.WriteJSON(w, http.StatusBadRequest, json.Wrapper{"error": apperr.ErrBadRequest}, nil)
 		return
 	}
 
-	if err := h.svc.UpdateAnswer(r.Context(), user, sessionID, questionID, answer); err != nil {
+	if err := h.svc.UpdateQuestionResponse(r.Context(), user, sessionID, questionID, qr); err != nil {
 		json.WriteJSON(w, http.StatusBadRequest, err.Error(), nil)
 		return
 	}
@@ -202,7 +202,7 @@ func (h *SessionHandler) putAnswer(w http.ResponseWriter, r *http.Request) {
 	json.WriteJSON(w, http.StatusNoContent, nil, nil)
 }
 
-func (h *SessionHandler) submitForSession(w http.ResponseWriter, r *http.Request) {
+func (h *SessionHandler) submitSessionResponse(w http.ResponseWriter, r *http.Request) {
 
 	user, err := jwt.GetUserDataFromContext(r.Context())
 	if err != nil {
@@ -216,7 +216,7 @@ func (h *SessionHandler) submitForSession(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	if err := h.svc.SubmitForSession(r.Context(), user, sessionID); err != nil {
+	if err := h.svc.SubmitSessionResponse(r.Context(), user, sessionID); err != nil {
 		json.WriteJSON(w, http.StatusInternalServerError, err.Error(), nil)
 		return
 	}
@@ -338,7 +338,7 @@ func (h *SessionHandler) autoMarkSession(w http.ResponseWriter, r *http.Request)
 	json.WriteJSON(w, http.StatusNoContent, nil, nil)
 }
 
-func (h *SessionHandler) getSubmissionsInSession(w http.ResponseWriter, r *http.Request) {
+func (h *SessionHandler) getSessionResponses(w http.ResponseWriter, r *http.Request) {
 
 	user, err := jwt.GetUserDataFromContext(r.Context())
 	if err != nil {
@@ -352,16 +352,16 @@ func (h *SessionHandler) getSubmissionsInSession(w http.ResponseWriter, r *http.
 		return
 	}
 
-	examinees, err := h.svc.FindSubmissionsForSession(r.Context(), user, sessionID)
+	responses, err := h.svc.FindSessionResponses(r.Context(), user, sessionID)
 	if err != nil {
 		json.WriteJSON(w, http.StatusInternalServerError, json.Wrapper{"error": err}, nil)
 		return
 	}
 
-	json.WriteJSON(w, http.StatusOK, json.Wrapper{"examinees": examinees}, nil)
+	json.WriteJSON(w, http.StatusOK, json.Wrapper{"responses": responses}, nil)
 }
 
-func (h *SessionHandler) examinerMarkSubmission(w http.ResponseWriter, r *http.Request) {
+func (h *SessionHandler) examinerMarkResponse(w http.ResponseWriter, r *http.Request) {
 
 	user, err := jwt.GetUserDataFromContext(r.Context())
 	if err != nil {
@@ -381,13 +381,13 @@ func (h *SessionHandler) examinerMarkSubmission(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	var body MarkForExamineeBody
+	var body MarkResponseBody
 	if err := json.ReadRequestBody(r, &body); err != nil {
 		json.WriteJSON(w, http.StatusBadRequest, json.Wrapper{"error": apperr.ErrBadRequest}, nil)
 		return
 	}
 
-	if err := h.svc.ExaminerMarkSubmission(r.Context(), user, sessionID, examineeID, body); err != nil {
+	if err := h.svc.ExaminerMarkResponse(r.Context(), user, sessionID, examineeID, body); err != nil {
 		json.WriteJSON(w, http.StatusInternalServerError, json.Wrapper{"error": err}, nil)
 		return
 	}
@@ -434,7 +434,7 @@ func (h *SessionHandler) getSessions(w http.ResponseWriter, r *http.Request) {
 	case store.UserRoleExaminer:
 		h.examinerGetSessions(w, r, user)
 	case store.UserRoleExaminee:
-		h.examineeGetSubmissions(w, r, user)
+		h.examineeGetResponses(w, r, user)
 	}
 }
 
@@ -477,9 +477,9 @@ func (h *SessionHandler) examinerGetSessions(w http.ResponseWriter, r *http.Requ
 	}, nil)
 }
 
-func (h *SessionHandler) examineeGetSubmissions(w http.ResponseWriter, r *http.Request, user store.User) {
+func (h *SessionHandler) examineeGetResponses(w http.ResponseWriter, r *http.Request, user store.User) {
 
-	submissions, err := h.svc.ExamineeFindSubmissions(r.Context(), user)
+	submissions, err := h.svc.ExamineeFindResponses(r.Context(), user)
 	if err != nil {
 		json.WriteJSON(w, http.StatusInternalServerError, json.Wrapper{"error": err}, nil)
 		return
@@ -509,7 +509,7 @@ func (h *SessionHandler) getSessionByID(w http.ResponseWriter, r *http.Request) 
 	case store.UserRoleExaminer:
 		h.examinerGetSession(w, r, user, sessionID)
 	case store.UserRoleExaminee:
-		h.examineeGetSubmission(w, r, user, sessionID)
+		h.examineeGetSessionResponse(w, r, user, sessionID)
 	}
 }
 
@@ -529,11 +529,11 @@ func (h *SessionHandler) examinerGetSession(w http.ResponseWriter, r *http.Reque
 	json.WriteJSON(w, http.StatusOK, json.Wrapper{"session": session}, nil)
 }
 
-func (h *SessionHandler) examineeGetSubmission(w http.ResponseWriter, r *http.Request, user store.User, sessionID uuid.UUID) {
+func (h *SessionHandler) examineeGetSessionResponse(w http.ResponseWriter, r *http.Request, user store.User, sessionID uuid.UUID) {
 
 	log.Println("Examinee here")
 
-	submission, err := h.svc.ExamineeFindSubmission(r.Context(), user, sessionID)
+	submission, err := h.svc.ExamineeFindSessionResponse(r.Context(), user, sessionID)
 	if err != nil {
 		json.WriteJSON(w, http.StatusInternalServerError, json.Wrapper{"error": err}, nil)
 		return

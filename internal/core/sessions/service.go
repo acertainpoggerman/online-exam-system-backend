@@ -36,7 +36,7 @@ type SessionService interface {
 	ExamineeCanConnect(ctx context.Context, user store.User, sessionID uuid.UUID) (bool, error)
 	OnExamineeConnect(ctx context.Context, user store.User, sessionID uuid.UUID) error
 	OnExamineeDisconnect(ctx context.Context, user store.User, sessionID uuid.UUID) error
-	FindSubmissionStatus(ctx context.Context, user store.User, sessionID uuid.UUID) (store.SubmissionStatus, error)
+	FindResponseStatus(ctx context.Context, user store.User, sessionID uuid.UUID) (store.ResponseStatus, error)
 
 	OnGraceExpired(ctx context.Context, userID, sessionID uuid.UUID) error
 	SendStateSync(ctx context.Context, userID, sessionID uuid.UUID) error
@@ -45,23 +45,19 @@ type SessionService interface {
 	// Examiner Making & Tracking
 
 	AutoMarkSession(ctx context.Context, user store.User, sessionID uuid.UUID) error
-	ExaminerMarkSubmission(ctx context.Context, user store.User, sessionID uuid.UUID, examineeID uuid.UUID, data MarkForExamineeBody) error
-	FindSubmissionsForSession(ctx context.Context, user store.User, sessionID uuid.UUID) ([]Submission, error)
+	ExaminerMarkResponse(ctx context.Context, user store.User, sessionID uuid.UUID, examineeID uuid.UUID, data MarkResponseBody) error
+	FindSessionResponses(ctx context.Context, user store.User, sessionID uuid.UUID) ([]Response, error)
 
-	// Examinee Submission
+	// Examinee Response
 
-	EnrolWithCode(ctx context.Context, user store.User, joinCode string) (Submission, error)
+	EnrolWithCode(ctx context.Context, user store.User, joinCode string) (Response, error)
 
-	ExamineeFindSubmissions(ctx context.Context, user store.User) ([]Submission, error)
-	ExamineeFindSubmission(ctx context.Context, user store.User, sessionID uuid.UUID) (Submission, error)
-	UpdateAnswer(ctx context.Context, user store.User, sessionID uuid.UUID, questionID uuid.UUID, answer Answer) error
-	SubmitForSession(ctx context.Context, user store.User, sessionID uuid.UUID) error
+	ExamineeFindResponses(ctx context.Context, user store.User) ([]Response, error)
+	ExamineeFindSessionResponse(ctx context.Context, user store.User, sessionID uuid.UUID) (Response, error)
+	UpdateQuestionResponse(ctx context.Context, user store.User, sessionID uuid.UUID, questionID uuid.UUID, qr QuestionResponse) error
+	SubmitSessionResponse(ctx context.Context, user store.User, sessionID uuid.UUID) error
 
 	FindExamineeLogs(ctx context.Context, user store.User, sessionID uuid.UUID, examineeID uuid.UUID) ([]store.ProctorEvent, error)
-}
-
-type ExtSessionService interface {
-	FindSessionByID(ctx context.Context, user store.User, sessionID uuid.UUID) (Session, error)
 }
 
 type sessionService struct {
@@ -84,42 +80,44 @@ func NewSessionService(
 // --- Session Participation Services -------------------------------------------------
 // ------------------------------------------------------------------------------------
 
-func (svc *sessionService) EnrolWithCode(ctx context.Context, user store.User, joinCode string) (Submission, error) {
+func (svc *sessionService) EnrolWithCode(ctx context.Context, user store.User, joinCode string) (Response, error) {
 
 	if err := common.RequireRole(user, store.UserRoleExaminee); err != nil {
-		return Submission{}, err
+		return Response{}, err
 	}
 
 	session, err := svc.q.FindSessionByJoinCode(ctx, joinCode)
 	if err != nil {
 		log.Printf("Error in EnrolWithCode: (%v)", err)
-		return Submission{}, apperr.ErrInternal
+		return Response{}, apperr.ErrInternal
 	}
 
-	sub, err := svc.q.CreateSubmission(ctx, store.CreateSubmissionParams{
+	sub, err := svc.q.CreateResponse(ctx, store.CreateResponseParams{
 		SessionID:  session.ID,
 		ExamineeID: user.ID,
 	})
 	if err == nil {
-		return Submission{Submission: sub}, nil
+		return Response{Response: sub}, nil
 	}
 
 	var pgErr *pgconn.PgError
+
+	// A response already exists for that session
 	if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation {
-		sub, err := svc.q.FindSubmissionByID(ctx, store.FindSubmissionByIDParams{
+		sub, err := svc.q.FindSingleResponse(ctx, store.FindSingleResponseParams{
 			SessionID:  session.ID,
 			ExamineeID: user.ID,
 		})
 		if err != nil {
 			log.Printf("Error in EnrolWithCode: (%v)", err)
-			return Submission{}, apperr.ErrInternal
+			return Response{}, apperr.ErrInternal
 		}
 
-		return Submission{Submission: sub}, nil
+		return Response{Response: sub}, nil
 	}
 
 	log.Printf("Error in EnrolWithCode: (%v)", err)
-	return Submission{}, apperr.ErrInternal
+	return Response{}, apperr.ErrInternal
 }
 
 // ------------------------------------------
@@ -152,11 +150,11 @@ func (svc *sessionService) StartSession(ctx context.Context, user store.User, se
 		return err
 	}
 
-	if err := qtx.SetQuestionsForSubmissions(ctx, sessionID); err != nil {
+	if err := qtx.SetQuestionResponsesForSession(ctx, sessionID); err != nil {
 		return err
 	}
 
-	if _, err := qtx.SetSubmissionStatusesForStartedSession(ctx, sessionID); err != nil {
+	if _, err := qtx.SetResponseStatusesForStartedSession(ctx, sessionID); err != nil {
 		return err
 	}
 
@@ -204,7 +202,7 @@ func (svc *sessionService) EndSession(ctx context.Context, user store.User, sess
 		return err
 	}
 
-	if _, err := qtx.SubmitAllSubmissionsForSession(ctx, sessionID); err != nil {
+	if _, err := qtx.SubmitAllResponsesForSession(ctx, sessionID); err != nil {
 		return err
 	}
 
@@ -218,6 +216,7 @@ func (svc *sessionService) EndSession(ctx context.Context, user store.User, sess
 	svc.hub.BroadcastTo(sessionID, Message{
 		Type: MessageTypeSessionEnded,
 	}, store.UserRoleExaminee)
+
 	svc.hub.PurgeSession(sessionID)
 
 	return nil
@@ -307,8 +306,9 @@ func (svc *sessionService) ReadmitExaminee(ctx context.Context, user store.User,
 		return err
 	}
 
-	if _, err := svc.q.SetSubmissionDisconnectedFromLeft(
-		ctx, store.SetSubmissionDisconnectedFromLeftParams{
+	if _, err := svc.q.SetResponseDisconnectedFromLeft(
+		ctx,
+		store.SetResponseDisconnectedFromLeftParams{
 			SessionID:  sessionID,
 			ExamineeID: examineeID,
 		},
@@ -352,8 +352,8 @@ func (svc *sessionService) UnflagExaminee(ctx context.Context, user store.User, 
 	switch examineeState {
 	// -----------------------------------------------------------
 	case ConnStateConnected:
-		if _, err := svc.q.SetSubmissionEditableFromFlagged(
-			ctx, store.SetSubmissionEditableFromFlaggedParams{
+		if _, err := svc.q.SetResponseEditableFromFlagged(
+			ctx, store.SetResponseEditableFromFlaggedParams{
 				SessionID:  sessionID,
 				ExamineeID: examineeID,
 			},
@@ -367,8 +367,8 @@ func (svc *sessionService) UnflagExaminee(ctx context.Context, user store.User, 
 		}
 	// -----------------------------------------------------------
 	default:
-		if _, err := svc.q.SetSubmissionDisconnectedFromFlagged(
-			ctx, store.SetSubmissionDisconnectedFromFlaggedParams{
+		if _, err := svc.q.SetResponseDisconnectedFromFlagged(
+			ctx, store.SetResponseDisconnectedFromFlaggedParams{
 				SessionID:  sessionID,
 				ExamineeID: examineeID,
 			},
@@ -397,8 +397,8 @@ func (svc *sessionService) UnflagExaminee(ctx context.Context, user store.User, 
 // --- WS Related ---------------------------
 // ------------------------------------------
 
-func (svc *sessionService) FindSubmissionStatus(ctx context.Context, user store.User, sessionID uuid.UUID) (store.SubmissionStatus, error) {
-	return svc.q.FindSubmissionStatus(ctx, store.FindSubmissionStatusParams{
+func (svc *sessionService) FindResponseStatus(ctx context.Context, user store.User, sessionID uuid.UUID) (store.ResponseStatus, error) {
+	return svc.q.FindResponseStatus(ctx, store.FindResponseStatusParams{
 		SessionID:  sessionID,
 		ExamineeID: user.ID,
 	})
@@ -410,7 +410,7 @@ func (svc *sessionService) ExamineeCanConnect(ctx context.Context, user store.Us
 		return false, nil
 	}
 
-	if _, err := svc.q.FindConnectableSubmission(ctx, store.FindConnectableSubmissionParams{
+	if _, err := svc.q.FindConnectableResponse(ctx, store.FindConnectableResponseParams{
 		SessionID:  sessionID,
 		ExamineeID: user.ID,
 	}); err != nil {
@@ -429,10 +429,13 @@ func (svc *sessionService) OnExamineeConnect(ctx context.Context, user store.Use
 		return err
 	}
 
-	if _, err := svc.q.SetSubmissionOnConnect(ctx, store.SetSubmissionOnConnectParams{
-		SessionID:  sessionID,
-		ExamineeID: user.ID,
-	}); err != nil {
+	if _, err := svc.q.SetResponseStatusOnConnect(
+		ctx,
+		store.SetResponseStatusOnConnectParams{
+			SessionID:  sessionID,
+			ExamineeID: user.ID,
+		},
+	); err != nil {
 		return err
 	}
 
@@ -449,10 +452,13 @@ func (svc *sessionService) OnExamineeDisconnect(ctx context.Context, user store.
 		return err
 	}
 
-	if _, err := svc.q.SetSubmissionOnDisconnect(ctx, store.SetSubmissionOnDisconnectParams{
-		SessionID:  sessionID,
-		ExamineeID: user.ID,
-	}); err != nil {
+	if _, err := svc.q.SetResponseStatusOnDisconnect(
+		ctx,
+		store.SetResponseStatusOnDisconnectParams{
+			SessionID:  sessionID,
+			ExamineeID: user.ID,
+		},
+	); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil
 		}
@@ -495,9 +501,9 @@ func (svc *sessionService) OnGraceExpired(ctx context.Context, userID, sessionID
 	}
 
 	// Only flag the user if in a disconnected state
-	if _, err := svc.q.SetSubmissionFlaggedFromDisconnect(
+	if _, err := svc.q.SetResponseFlaggedFromDisconnect(
 		ctx,
-		store.SetSubmissionFlaggedFromDisconnectParams{
+		store.SetResponseFlaggedFromDisconnectParams{
 			SessionID:  sessionID,
 			ExamineeID: userID,
 		},
@@ -569,10 +575,13 @@ func (svc *sessionService) HandleProctorEvent(ctx context.Context, user store.Us
 
 	// For now just flag every event type
 
-	if _, err := svc.q.SetSubmissionFlaggedFromEditable(ctx, store.SetSubmissionFlaggedFromEditableParams{
-		SessionID:  event.SessionID,
-		ExamineeID: event.ExamineeID,
-	}); err != nil {
+	if _, err := svc.q.SetResponseFlaggedFromEditable(
+		ctx,
+		store.SetResponseFlaggedFromEditableParams{
+			SessionID:  event.SessionID,
+			ExamineeID: event.ExamineeID,
+		},
+	); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			log.Printf("Session:(%s) Apparently not editable, check DB", event.SessionID)
 			return nil
@@ -599,30 +608,30 @@ func (svc *sessionService) HandleProctorEvent(ctx context.Context, user store.Us
 // --- Examiner Services --------------------------------------------------------------
 // ------------------------------------------------------------------------------------
 
-func (svc *sessionService) FindSubmissionsForSession(ctx context.Context, user store.User, sessionID uuid.UUID) ([]Submission, error) {
+func (svc *sessionService) FindSessionResponses(ctx context.Context, user store.User, sessionID uuid.UUID) ([]Response, error) {
 
 	if err := common.RequireRole(user, store.UserRoleExaminer); err != nil {
-		return []Submission{}, err
+		return []Response{}, err
 	}
 
 	if session, err := svc.q.FindSessionByID(ctx, sessionID); err != nil {
-		return []Submission{}, apperr.ErrNotFound
+		return []Response{}, apperr.ErrNotFound
 	} else if err := common.RequireOwner(user, session.CreatorID); err != nil {
-		return []Submission{}, err
+		return []Response{}, err
 	}
 
-	results, err := svc.q.FindSubmssionsForSessionWithUser(ctx, sessionID)
+	rows, err := svc.q.FindSessionResponsesWithUser(ctx, sessionID)
 	if err != nil {
 		log.Printf("Error in FindSubmissionsForSession: (%v)\n", err)
 		return nil, apperr.ErrInternal
 	}
 
-	return common.Map(results, func(res store.FindSubmssionsForSessionWithUserRow) Submission {
-		return Submission{
-			Submission: res.Submission,
-			Examinee:   res.User,
-		}
-	}), nil
+	return common.Map(
+		rows,
+		func(row store.FindSessionResponsesWithUserRow) Response {
+			return Response{Response: row.Response, Examinee: row.User}
+		},
+	), nil
 }
 
 // ------------------------------------------------------------------------------------

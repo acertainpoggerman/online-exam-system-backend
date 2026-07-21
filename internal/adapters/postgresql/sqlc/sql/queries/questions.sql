@@ -1,6 +1,5 @@
 -- Creates a new choice question
 --
---------------------------------
 -- name: CreateChoiceQuestion :one
 
 WITH inserted AS (
@@ -27,7 +26,6 @@ RETURNING id;
 
 -- Creates a new text question
 --
-------------------------------
 -- name: CreateTextQuestion :one
 
 WITH inserted AS (
@@ -57,7 +55,6 @@ RETURNING id;
 -- Fully replace all answer key values for the
 -- question with the given ID
 --
-----------------------------------------------
 -- name: ReplaceAnswerKeyForQuestion :exec
 
 WITH deleted AS (
@@ -78,7 +75,6 @@ WHERE questions.id = $1
 
 -- Finds the answer key for a question as a list
 --
-------------------------------------------------
 -- name: FindAnswerKeyForQuestion :many
 
 SELECT answer_keys.value FROM answer_keys
@@ -89,7 +85,6 @@ WHERE answer_keys.question_id = $1;
 
 -- Updates the parent question fields if possible.
 --
---------------------------------------------------
 -- name: UpdateQuestionFields :exec
 
 UPDATE questions SET
@@ -105,7 +100,6 @@ WHERE questions.id = $1
 -- Deletes the question if possible.
 -- cascades to child components (e.g. subquestions & options)
 --
--------------------------------------------------------------
 -- name: DeleteQuestion :exec
 
 DELETE FROM questions
@@ -123,7 +117,6 @@ WHERE questions.id = $1
 -- delete all other subquestions & change the type of the
 -- parent question to maintain FK constraints.
 --
----------------------------------------------------------------
 -- name: UpsertTextQuestion :exec
 
 WITH
@@ -158,7 +151,6 @@ ON CONFLICT (id) DO UPDATE SET
 -- delete all other subquestions & change the type of the
 -- parent question to maintain FK constraints.
 --
----------------------------------------------------------------
 -- name: UpsertChoiceQuestion :exec
 
 WITH
@@ -190,7 +182,6 @@ ON CONFLICT (id) DO UPDATE SET
 -- Gets all the questions for a script ordered
 -- by time of creation
 --
-----------------------------------------------
 -- name: FindQuestionsForScript :many
 
 SELECT questions.* FROM
@@ -199,21 +190,8 @@ WHERE scripts.id = $1
 ORDER BY questions.created_at ASC;
 
 
--- Returns all question fields assigned for an examinee.
--- Combine with FindOptionsForQuestionShuffled
---
---------------------------------------------------------
--- name: FindQuestionsForSubmission :many
-
-SELECT questions.* FROM
-    questions INNER JOIN submission_questions sq ON questions.id = sq.question_id
-WHERE sq.submission_id = $1
-ORDER BY sq.created_at DESC;
-
-
 -- Gets a single question
 --
--------------------------
 -- name: FindQuestionByID :one
 
 SELECT * FROM questions
@@ -222,10 +200,12 @@ WHERE questions.id = $1;
 
 
 -- name: FindChoiceQuestionByID :one
+
 SELECT * FROM choice_questions
 WHERE choice_questions.id = $1;
 
 -- name: FindTextQuestionByID :one
+
 SELECT * FROM text_questions WHERE text_questions.id = $1;
 
 
@@ -235,7 +215,6 @@ SELECT * FROM text_questions WHERE text_questions.id = $1;
 -- Will not work with other subquestion types thanks to the
 -- foreign key constraints.
 --
------------------------------------------------------------
 -- name: ReplaceOptionsForQuestion :exec
 
 WITH deleted AS (
@@ -259,7 +238,6 @@ WHERE questions.id = $1
 -- Finds options for a question order by creation.
 -- Used for obtaining options for a question for editing
 --
---------------------------------------------------------
 -- name: FindOptionsForQuestion :many
 SELECT * FROM options
     WHERE options.question_id = $1
@@ -269,8 +247,11 @@ SELECT * FROM options
 -- Finds options for a question unordered. Used for
 -- obtaining options for a question during an exam session
 --
-----------------------------------------------------------
 -- name: FindOptionsForQuestionShuffled :many
 SELECT * FROM options
     WHERE options.question_id = $1
     ORDER BY random();
+
+
+-- name: FindQuestionMark :one
+SELECT get_question_mark(@question_id::uuid)::integer;
