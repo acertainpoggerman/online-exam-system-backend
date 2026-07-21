@@ -6,11 +6,9 @@ import (
 	"net"
 	"net/http"
 
-
 	store "github.com/acertainpoggerman/online-exam-system/internal/adapters/postgresql/sqlc"
 	"github.com/acertainpoggerman/online-exam-system/internal/core/scripts"
 	"github.com/acertainpoggerman/online-exam-system/internal/core/sessions"
-	"github.com/acertainpoggerman/online-exam-system/internal/core/submissions"
 	"github.com/acertainpoggerman/online-exam-system/internal/core/users"
 	"github.com/acertainpoggerman/online-exam-system/internal/middleware"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
@@ -79,13 +77,9 @@ func main() {
 	scriptHandler := scripts.NewScriptHandler(scriptService)
 	scriptHandler.RegisterRoutes(authedRouter)
 
-	submissionService := submissions.NewSubmissionService(q, pool, scriptService)
-	submissionHandler := submissions.NewSubmissionHandler(submissionService)
-	submissionHandler.RegisterRoutes(authedRouter)
-
 	hub := sessions.NewHub()
 
-	sessionService := sessions.NewSessionService(q, pool, hub, submissionService)
+	sessionService := sessions.NewSessionService(q, pool, hub, scriptService)
 	sessionHandler := sessions.NewSessionHandler(sessionService)
 	sessionHandler.RegisterRoutes(authedRouter)
 

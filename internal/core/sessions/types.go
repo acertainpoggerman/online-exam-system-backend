@@ -22,6 +22,32 @@ type Session struct {
 	// Schedule store.SessionSchedule `json:"schedule"
 }
 
+// ---------------------------------------------------------
+// --- Submissions -----------------------------------------
+// ---------------------------------------------------------
+
+type CreateSubmissionBody struct {
+	SessionID uuid.UUID `json:"session_id"`
+}
+
+type Submission struct {
+	store.Submission
+	Examinee  store.User `json:"examinee,omitzero"`
+	TotalMark int        `json:"total_mark"`
+	MaxMark   int        `json:"max_mark"`
+	Answers   []Answer   `json:"answers,omitempty"`
+}
+
+type Answer struct {
+	store.SubmissionQuestion
+	Question scripts.Question `json:"question,omitzero"`
+	Value    []string         `json:"value"`
+}
+
+// ---------------------------------------------------------
+// --- Helper Functions ------------------------------------
+// ---------------------------------------------------------
+
 func generateSessionCode(n int) (code string) {
 	chars := "0123456789abcdefghijklmnopqrstuvwxyz"
 	for _ = range n {

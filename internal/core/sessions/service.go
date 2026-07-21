@@ -10,7 +10,7 @@ import (
 	"github.com/acertainpoggerman/online-exam-system/internal/api"
 	"github.com/acertainpoggerman/online-exam-system/internal/apperr"
 	"github.com/acertainpoggerman/online-exam-system/internal/common"
-	"github.com/acertainpoggerman/online-exam-system/internal/core/submissions"
+	"github.com/acertainpoggerman/online-exam-system/internal/core/scripts"
 	"github.com/acertainpoggerman/online-exam-system/internal/json"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -52,65 +52,61 @@ type ExtSessionService interface {
 }
 
 type sessionService struct {
-	q    *store.Queries
-	pool *pgxpool.Pool
-	hub  *Hub
-	sub  submissions.ExtSubmissionService
+	q      *store.Queries
+	pool   *pgxpool.Pool
+	hub    *Hub
+	script scripts.ExtScriptService
 }
 
 func NewSessionService(
 	q *store.Queries,
 	pool *pgxpool.Pool,
 	hub *Hub,
-	sub submissions.ExtSubmissionService,
+	script scripts.ExtScriptService,
 ) *sessionService {
-	return &sessionService{q, pool, hub, sub}
+	return &sessionService{q, pool, hub, script}
 }
 
 // ------------------------------------------------------------------------------------
 // --- Session Participation Services -------------------------------------------------
 // ------------------------------------------------------------------------------------
 
-func (svc *sessionService) EnrolWithCode(ctx context.Context, user store.User, joinCode string) (submissions.Submission, error) {
+func (svc *sessionService) EnrolWithCode(ctx context.Context, user store.User, joinCode string) (Submission, error) {
 
 	if err := common.RequireRole(user, store.UserRoleExaminee); err != nil {
-		return submissions.Submission{}, err
+		return Submission{}, err
 	}
 
 	session, err := svc.q.FindSessionByJoinCode(ctx, joinCode)
 	if err != nil {
-		return submissions.Submission{}, err
+		log.Printf("Error in EnrolWithCode: (%v)", err)
+		return Submission{}, apperr.ErrInternal
 	}
 
-	return svc.sub.CreateSubmission(ctx, user, submissions.CreateSubmissionBody{
-		SessionID: session.ID,
-	})
-}
-
-func (svc *sessionService) SubmitForSession(ctx context.Context, user store.User, sessionID uuid.UUID) error {
-
-	if err := common.RequireRole(user, store.UserRoleExaminee); err != nil {
-		return err
-	}
-
-	if _, err := svc.q.SetSubmissionSubmitted(ctx, store.SetSubmissionSubmittedParams{
-		SessionID:  sessionID,
+	sub, err := svc.q.CreateSubmission(ctx, store.CreateSubmissionParams{
+		SessionID:  session.ID,
 		ExamineeID: user.ID,
-	}); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return apperr.ErrNotFound
-		}
-		log.Printf("Error SubmitSubmission: %v", err)
-		return apperr.ErrInternal
+	})
+	if err == nil {
+		return Submission{Submission: sub}, nil
 	}
 
-	svc.hub.BroadcastTo(sessionID, Message{
-		Type: MessageTypeParticipantsChanged,
-	}, store.UserRoleExaminer)
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation {
+		sub, err := svc.q.FindSubmissionByID(ctx, store.FindSubmissionByIDParams{
+			SessionID:  session.ID,
+			ExamineeID: user.ID,
+		})
+		if err != nil {
+			log.Printf("Error in EnrolWithCode: (%v)", err)
+			return Submission{}, apperr.ErrInternal
+		}
 
-	svc.hub.RemoveMember(user.ID, sessionID)
+		return Submission{Submission: sub}, nil
+	}
 
-	return nil
+	log.Printf("Error in EnrolWithCode: (%v)", err)
+	return Submission{}, apperr.ErrInternal
 }
 
 // ------------------------------------------
@@ -590,16 +586,16 @@ func (svc *sessionService) HandleProctorEvent(ctx context.Context, user store.Us
 // --- Examiner Services --------------------------------------------------------------
 // ------------------------------------------------------------------------------------
 
-func (svc *sessionService) FindSubmissionsForSession(ctx context.Context, user store.User, sessionID uuid.UUID) ([]submissions.Submission, error) {
+func (svc *sessionService) FindSubmissionsForSession(ctx context.Context, user store.User, sessionID uuid.UUID) ([]Submission, error) {
 
 	if err := common.RequireRole(user, store.UserRoleExaminer); err != nil {
-		return []submissions.Submission{}, err
+		return []Submission{}, err
 	}
 
 	if session, err := svc.q.FindSessionByID(ctx, sessionID); err != nil {
-		return []submissions.Submission{}, apperr.ErrNotFound
+		return []Submission{}, apperr.ErrNotFound
 	} else if err := common.RequireOwner(user, session.CreatorID); err != nil {
-		return []submissions.Submission{}, err
+		return []Submission{}, err
 	}
 
 	results, err := svc.q.FindSubmssionsForSessionWithUser(ctx, sessionID)
@@ -608,8 +604,8 @@ func (svc *sessionService) FindSubmissionsForSession(ctx context.Context, user s
 		return nil, apperr.ErrInternal
 	}
 
-	return common.Map(results, func(res store.FindSubmssionsForSessionWithUserRow) submissions.Submission {
-		return submissions.Submission{
+	return common.Map(results, func(res store.FindSubmssionsForSessionWithUserRow) Submission {
+		return Submission{
 			Submission: res.Submission,
 			Examinee:   res.User,
 		}
