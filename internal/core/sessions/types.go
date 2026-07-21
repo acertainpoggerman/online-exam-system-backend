@@ -8,9 +8,8 @@ import (
 )
 
 type CreateSessionBody struct {
-	Title         string    `json:"title"`
-	ScriptID      uuid.UUID `json:"script_id"`
-	QuestionCount *int32    `json:"question_count"`
+	Title    string    `json:"title"`
+	ScriptID uuid.UUID `json:"script_id"`
 }
 
 type JoinSessionBody struct {
