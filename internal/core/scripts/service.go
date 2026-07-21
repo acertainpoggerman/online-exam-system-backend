@@ -22,8 +22,6 @@ type ScriptService interface {
 	CreateQuestion(ctx context.Context, user store.User, scriptID uuid.UUID, question Question) (Question, error)
 	ReplaceQuestion(ctx context.Context, user store.User, scriptID uuid.UUID, questionID uuid.UUID, question Question) (Question, error)
 	DeleteQuestion(ctx context.Context, user store.User, scriptID uuid.UUID, questionID uuid.UUID) (Question, error)
-
-	FindScriptForSubmission(ctx context.Context, user store.User, submissionID uuid.UUID) (Script, error)
 }
 
 type ExtScriptService interface {
