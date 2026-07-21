@@ -42,6 +42,13 @@ sql:
           - column: "choice_questions.type"
             go_struct_tag: 'json:"-"'
 
+          - column: "submission_questions.submission_id"
+            go_struct_tag: 'json:"-"'
+          - column: "submission_questions.mark"
+            go_struct_tag: 'json:"mark,omitempty"'
+          - column: "submission_questions.feedback"
+            go_struct_tag: 'json:"feedback,omitzero"'
+
           - column: "text_questions.is_short_text"
             go_struct_tag: 'mapstructure:"is_short_text"'
           - column: "choice_questions.is_multiple_choice"
