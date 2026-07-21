@@ -43,8 +43,22 @@ type SessionService interface {
 	SendStateSync(ctx context.Context, userID, sessionID uuid.UUID) error
 	HandleProctorEvent(ctx context.Context, user store.User, event ProctorEventData) error
 
-	MarkSubmissionsForSession(ctx context.Context, user store.User, sessionID uuid.UUID) error
-	FindSubmissionsForSession(ctx context.Context, user store.User, sessionID uuid.UUID) ([]submissions.Submission, error)
+	// Examiner Making & Tracking
+
+	AutoMarkSession(ctx context.Context, user store.User, sessionID uuid.UUID) error
+	ExaminerMarkSubmission(ctx context.Context, user store.User, sessionID uuid.UUID, examineeID uuid.UUID, data MarkForExamineeBody) error
+	FindSubmissionsForSession(ctx context.Context, user store.User, sessionID uuid.UUID) ([]Submission, error)
+
+	// Examinee Submission
+
+	EnrolWithCode(ctx context.Context, user store.User, joinCode string) (Submission, error)
+
+	ExamineeFindSubmissions(ctx context.Context, user store.User) ([]Submission, error)
+	ExamineeFindSubmission(ctx context.Context, user store.User, sessionID uuid.UUID) (Submission, error)
+	UpdateAnswer(ctx context.Context, user store.User, sessionID uuid.UUID, questionID uuid.UUID, answer Answer) error
+	SubmitForSession(ctx context.Context, user store.User, sessionID uuid.UUID) error
+
+	FindExamineeLogs(ctx context.Context, user store.User, sessionID uuid.UUID, examineeID uuid.UUID) ([]store.ProctorEvent, error)
 }
 
 type ExtSessionService interface {
@@ -610,45 +624,6 @@ func (svc *sessionService) FindSubmissionsForSession(ctx context.Context, user s
 			Examinee:   res.User,
 		}
 	}), nil
-}
-
-func (svc *sessionService) MarkSubmissionsForSession(ctx context.Context, user store.User, sessionID uuid.UUID) error {
-
-	if err := common.RequireRole(user, store.UserRoleExaminer); err != nil {
-		return err
-	}
-
-	tx, err := svc.pool.Begin(ctx)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback(ctx)
-	qtx := svc.q.WithTx(tx)
-
-	// ----------------------------------------------------------------------------------------
-	// --- Ensuring User (as Examiner) owns the Script ----------------------------------------
-
-	if session, err := qtx.FindSessionByID(ctx, sessionID); err != nil {
-		return err
-	} else if err := common.RequireOwner(user, session.CreatorID); err != nil {
-		return err
-	}
-
-	// ----------------------------------------------------------------------------------------
-	// --- Marking Submissions -----------------------------------------------------------------
-
-	submissions, err := qtx.FindSubmissionsForSession(ctx, sessionID)
-	if err != nil {
-		return err
-	}
-
-	for _, submission := range submissions {
-		if err := svc.sub.MarkSubmission(ctx, qtx, submission.ID); err != nil {
-			return err
-		}
-	}
-
-	return tx.Commit(ctx)
 }
 
 // ------------------------------------------------------------------------------------

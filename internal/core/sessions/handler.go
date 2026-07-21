@@ -38,12 +38,8 @@ func (h *SessionHandler) RegisterRoutes(r *http.ServeMux) {
 
 	r.HandleFunc("GET /sessions/{session_id}/examinees", h.getExamineesInSession)
 
-	// POST /sessions/{session_id}/submit					(For examinees will submit the submission for that session)
-	// PUT	/sessions/{session_id}/answers/{question_id}	(For examines will change the answer of a given question)
-	// GET	/sessions/{session_id} 							(For examinees will produce their submission if they have one)
-
-	r.HandleFunc("POST /sessions/{session_id}/mark", h.markSessionByID)
-
+	r.HandleFunc("POST /sessions/{session_id}/mark", h.autoMarkSession)
+	r.HandleFunc("POST /sessions/{session_id}/examinees/{examinee_id}/mark", h.examinerMarkSubmission)
 }
 
 // -----------------------------------------------------------------------
@@ -249,7 +245,7 @@ func (h *SessionHandler) readmitExaminee(w http.ResponseWriter, r *http.Request)
 // --- Post-Session Related ----------------------------------------------
 // -----------------------------------------------------------------------
 
-func (h *SessionHandler) markSessionByID(w http.ResponseWriter, r *http.Request) {
+func (h *SessionHandler) autoMarkSession(w http.ResponseWriter, r *http.Request) {
 
 	user, err := jwt.GetUserDataFromContext(r.Context())
 	if err != nil {
@@ -263,7 +259,7 @@ func (h *SessionHandler) markSessionByID(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if err := h.svc.MarkSubmissionsForSession(r.Context(), user, sessionID); err != nil {
+	if err := h.svc.AutoMarkSession(r.Context(), user, sessionID); err != nil {
 		json.WriteJSON(w, http.StatusInternalServerError, err.Error(), nil)
 		return
 	}
@@ -292,6 +288,40 @@ func (h *SessionHandler) getExamineesInSession(w http.ResponseWriter, r *http.Re
 	}
 
 	json.WriteJSON(w, http.StatusOK, json.Wrapper{"examinees": examinees}, nil)
+}
+
+func (h *SessionHandler) examinerMarkSubmission(w http.ResponseWriter, r *http.Request) {
+
+	user, err := jwt.GetUserDataFromContext(r.Context())
+	if err != nil {
+		json.WriteJSON(w, http.StatusBadRequest, "Could not get user", nil)
+		return
+	}
+
+	sessionID, err := uuid.Parse(r.PathValue("session_id"))
+	if err != nil {
+		json.WriteJSON(w, http.StatusBadRequest, "Invalid session ID", nil)
+		return
+	}
+
+	examineeID, err := uuid.Parse(r.PathValue("examinee_id"))
+	if err != nil {
+		json.WriteJSON(w, http.StatusBadRequest, "Invalid session ID", nil)
+		return
+	}
+
+	var body MarkForExamineeBody
+	if err := json.ReadRequestBody(r, &body); err != nil {
+		json.WriteJSON(w, http.StatusBadRequest, json.Wrapper{"error": apperr.ErrBadRequest}, nil)
+		return
+	}
+
+	if err := h.svc.ExaminerMarkSubmission(r.Context(), user, sessionID, examineeID, body); err != nil {
+		json.WriteJSON(w, http.StatusInternalServerError, json.Wrapper{"error": err}, nil)
+		return
+	}
+
+	json.WriteJSON(w, http.StatusNoContent, nil, nil)
 }
 
 // -----------------------------------------------------------------------

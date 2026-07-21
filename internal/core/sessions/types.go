@@ -17,6 +17,16 @@ type JoinSessionBody struct {
 	JoinCode string `json:"code"`
 }
 
+type MarkForExamineeBody struct {
+	Marks []Mark `json:"given_marks"`
+}
+
+type Mark struct {
+	QuestionID uuid.UUID `json:"question_id"`
+	Value      int32     `json:"value"`
+	Feedback   string    `json:"feedback"`
+}
+
 type Session struct {
 	store.Session
 	// Schedule store.SessionSchedule `json:"schedule"
