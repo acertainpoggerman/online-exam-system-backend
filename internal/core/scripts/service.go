@@ -16,7 +16,7 @@ type ScriptService interface {
 	CreateScript(ctx context.Context, user store.User, data CreateScriptBody) (Script, error)
 	FindScripts(ctx context.Context, user store.User, cursor *api.Cursor, size int32, search string) ([]Script, int64, error)
 	FindScriptByID(ctx context.Context, user store.User, scriptID uuid.UUID) (Script, error)
-	UpdateScriptFields(ctx context.Context, user store.User, scriptID uuid.UUID, data CreateScriptBody) error
+	UpdateScriptFields(ctx context.Context, user store.User, scriptID uuid.UUID, data UpdateScriptBody) error
 	DeleteScriptByID(ctx context.Context, user store.User, scriptID uuid.UUID) error
 
 	CreateQuestion(ctx context.Context, user store.User, scriptID uuid.UUID, question Question) (Question, error)
@@ -184,7 +184,7 @@ func (svc *scriptService) CreateScript(ctx context.Context, user store.User, dat
 	return Script{Script: script}, tx.Commit(ctx)
 }
 
-func (svc *scriptService) UpdateScriptFields(ctx context.Context, user store.User, scriptID uuid.UUID, data CreateScriptBody) error {
+func (svc *scriptService) UpdateScriptFields(ctx context.Context, user store.User, scriptID uuid.UUID, data UpdateScriptBody) error {
 
 	if user.Role != store.UserRoleExaminer {
 		return fmt.Errorf("Cannot access resource as: %s", user.Role)
@@ -214,6 +214,7 @@ func (svc *scriptService) UpdateScriptFields(ctx context.Context, user store.Use
 		Title:       data.Title,
 		Heading:     data.Heading,
 		Description: data.Description,
+		DefaultMark: int32(data.DefaultMark),
 	}); err != nil {
 		return err
 	}

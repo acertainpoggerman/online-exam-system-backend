@@ -134,7 +134,7 @@ func (h *ScriptHandler) putScript(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var body CreateScriptBody
+	var body UpdateScriptBody
 	if err := json.ReadRequestBody(r, &body); err != nil {
 		json.WriteJSON(w, http.StatusBadRequest, err.Error(), nil)
 		return

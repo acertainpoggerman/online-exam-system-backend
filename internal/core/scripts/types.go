@@ -16,8 +16,8 @@ type CreateScriptBody struct {
 }
 
 type UpdateScriptBody struct {
-	IncludeScript bool                  `json:"include_script_in_response"`
-	Actions       []update.UpdateAction `json:"actions"`
+	CreateScriptBody
+	DefaultMark int `json:"default_mark"`
 }
 
 type Script struct {
