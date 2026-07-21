@@ -442,5 +442,5 @@ func (h *SessionHandler) putSessionByID(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	json.WriteJSON(w, http.StatusCreated, json.Wrapper{"session": session}, nil)
+	json.WriteJSON(w, http.StatusOK, json.Wrapper{"session": session}, nil)
 }
