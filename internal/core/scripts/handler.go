@@ -168,52 +168,6 @@ func (h *ScriptHandler) deleteScriptByID(w http.ResponseWriter, r *http.Request)
 	json.WriteJSON(w, http.StatusNoContent, nil, nil)
 }
 
-func (h *ScriptHandler) getScriptForSubmission(w http.ResponseWriter, r *http.Request) {
-
-	user, err := jwt.GetUserDataFromContext(r.Context())
-	if err != nil {
-		json.WriteJSON(w, http.StatusBadRequest, json.Wrapper{"error": "User ID not found"}, nil)
-		return
-	}
-
-	submissionID, err := uuid.Parse(r.PathValue("submission_id"))
-	if err != nil {
-		json.WriteJSON(w, http.StatusBadRequest, json.Wrapper{"error": err.Error()}, nil)
-		return
-	}
-
-	script, err := h.svc.FindScriptForSubmission(r.Context(), user, submissionID)
-	if err != nil {
-		json.WriteJSON(w, http.StatusInternalServerError, err.Error(), nil)
-		return
-	}
-
-	json.WriteJSON(w, http.StatusOK, json.Wrapper{"script": script}, nil)
-}
-
-func (h *ScriptHandler) getScriptForSubmission(w http.ResponseWriter, r *http.Request) {
-
-	user, err := jwt.GetUserDataFromContext(r.Context())
-	if err != nil {
-		json.WriteJSON(w, http.StatusBadRequest, json.Wrapper{"error": "User ID not found"}, nil)
-		return
-	}
-
-	submissionID, err := uuid.Parse(r.PathValue("submission_id"))
-	if err != nil {
-		json.WriteJSON(w, http.StatusBadRequest, json.Wrapper{"error": err.Error()}, nil)
-		return
-	}
-
-	script, err := h.svc.FindScriptForSubmission(r.Context(), user, submissionID)
-	if err != nil {
-		json.WriteJSON(w, http.StatusInternalServerError, err.Error(), nil)
-		return
-	}
-
-	json.WriteJSON(w, http.StatusOK, json.Wrapper{"script": script}, nil)
-}
-
 // ------------------------------------------------------------------------------------
 // --- Question Endpoints -------------------------------------------------------------
 // ------------------------------------------------------------------------------------
